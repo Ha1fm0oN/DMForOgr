@@ -725,6 +725,7 @@ gdal_check_package(OpenCL "Enable OpenCL (may be used for warping)" CAN_DISABLE)
 set(PostgreSQL_ADDITIONAL_VERSIONS "14" CACHE STRING "Additional PostgreSQL versions to check")
 gdal_check_package(PostgreSQL "" CAN_DISABLE)
 
+gdal_check_package(DM "enable ogr_dm driver" CAN_DISABLE)
 gdal_check_package(FYBA "enable ogr_SOSI driver" CAN_DISABLE)
 # Assume liblzma from xzutils, skip expensive checks.
 set(LIBLZMA_HAS_AUTO_DECODER 1)
