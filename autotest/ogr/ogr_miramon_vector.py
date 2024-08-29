@@ -59,9 +59,26 @@ def check_simple_point(ds):
     assert (
         f.GetGeometryRef().ExportToWkt() == "POINT (513.488106565226 848.806850618409)"
     )
+
+    assert (
+        lyr.GetLayerDefn()
+        .GetFieldDefn(lyr.GetLayerDefn().GetFieldIndex("LOGICALY"))
+        .GetSubType()
+        == ogr.OFSTBoolean
+    )
+    assert (
+        lyr.GetLayerDefn()
+        .GetFieldDefn(lyr.GetLayerDefn().GetFieldIndex("LOGICALN"))
+        .GetSubType()
+        == ogr.OFSTBoolean
+    )
+
     assert f.GetField("ID_GRAFIC") == 0
     assert f.GetFieldAsString("ATT1") == "A"
     assert f.GetFieldAsString("ATTRIBUTE_2") == "B"
+
+    assert f.GetField("LOGICALY") == 1
+    assert f.GetField("LOGICALN") == 0
 
     f = lyr.GetNextFeature()
     assert f is not None, "Failed to get feature"
@@ -71,6 +88,8 @@ def check_simple_point(ds):
     assert f.GetField("ID_GRAFIC") == 1
     assert f.GetFieldAsString("ATT1") == "C"
     assert f.GetFieldAsString("ATTRIBUTE_2") == "D"
+    assert f.GetField("LOGICALY") == 1
+    assert f.GetField("LOGICALN") == 0
 
     f = lyr.GetNextFeature()
     assert f is not None, "Failed to get feature"
@@ -80,6 +99,8 @@ def check_simple_point(ds):
     assert f.GetField("ID_GRAFIC") == 2
     assert f.GetFieldAsString("ATT1") == ""
     assert f.GetFieldAsString("ATTRIBUTE_2") == ""
+    assert f.GetField("LOGICALY") == 1
+    assert f.GetField("LOGICALN") == 0
 
 
 def test_ogr_miramon_read_simple_point():
@@ -326,6 +347,18 @@ def test_ogr_miramon_read_simple_polygon():
 
     ds = gdal.OpenEx(
         "data/miramon/Polygons/SimplePolygons/SimplePolFile.pol", gdal.OF_VECTOR
+    )
+    assert ds is not None, "Failed to get dataset"
+    check_simple_polygon(ds)
+
+
+# testing a polygon where the reference to arc has no extension
+# the result has to be the same than if it has extension
+def test_ogr_miramon_read_simple_polygon_no_ext():
+
+    ds = gdal.OpenEx(
+        "data/miramon/Polygons/SimplePolygonsCycleNoExt/SimplePolFile.pol",
+        gdal.OF_VECTOR,
     )
     assert ds is not None, "Failed to get dataset"
     check_simple_polygon(ds)
@@ -850,6 +883,14 @@ def test_ogr_miramon_OpenLanguageArc(Language, expected_description):
         ("data/miramon/CorruptedFiles/NoArcRel/SimpleArcFile.arc", "rel must exist"),
         ("data/miramon/CorruptedFiles/NoPolRel/SimplePolFile.pol", "rel must exist"),
         ("data/miramon/CorruptedFiles/BadCycle/SimplePolFile.pol", "Cannot open file"),
+        (
+            "data/miramon/CorruptedFiles/InexistentCycle1/SimplePolFile.pol",
+            "Cannot open file",
+        ),
+        (
+            "data/miramon/CorruptedFiles/InexistentCycle2/SimplePolFile.pol",
+            "Error reading the ARC file in the metadata file",
+        ),
     ],
 )
 def test_ogr_miramon_corrupted_files(name, message):
@@ -885,7 +926,7 @@ def test_ogr_miramon_corrupted_files(name, message):
         ),
     ],
 )
-def test_ogr_miramon_corrupted_features_point(name, message):
+def test_ogr_miramon_corrupted_features(name, message):
 
     ds = gdal.OpenEx(
         name,
@@ -957,6 +998,9 @@ def create_common_attributes(lyr):
     lyr.CreateField(ogr.FieldDefn("int64listfield", ogr.OFTInteger64List))
     lyr.CreateField(ogr.FieldDefn("doulistfield", ogr.OFTRealList))
     lyr.CreateField(ogr.FieldDefn("datefield", ogr.OFTDate))
+    f = ogr.FieldDefn("boolfield", ogr.OFTInteger)
+    f.SetSubType(ogr.OFSTBoolean)
+    lyr.CreateField(f)
 
 
 def assign_common_attributes(f):
@@ -969,6 +1013,7 @@ def assign_common_attributes(f):
     f["int64listfield"] = [12345678912345678]
     f["doulistfield"] = [1.5, 4.2]
     f["datefield"] = "2024/04/24"
+    f["boolfield"] = 1
 
 
 def check_common_attributes(f):
@@ -981,6 +1026,7 @@ def check_common_attributes(f):
     assert f["int64listfield"] == [12345678912345678]
     assert f["doulistfield"] == [1.5, 4.2]
     assert f["datefield"] == "2024/04/24"
+    assert f["boolfield"] == [True]
 
 
 def open_ds_lyr_0_feature_0(layername):
@@ -1013,7 +1059,7 @@ def test_ogr_miramon_write_basic_polygon(tmp_path):
 
     assert f["ID_GRAFIC"] == [1, 1]
     assert f["N_VERTEXS"] == [4, 4]
-    assert f["PERIMETRE"] == [3.414213562, 3.414213562]
+    assert f["PERIMETRE"] == [3.414, 3.414]
     assert f["AREA"] == [0.500000000000, 0.500000000000]
     assert f["N_ARCS"] == [1, 1]
     assert f["N_POLIG"] == [1, 1]
@@ -1127,7 +1173,16 @@ def test_ogr_miramon_write_basic_linestring(tmp_path):
     ds = None
 
 
-def test_ogr_miramon_write_basic_linestringZ(tmp_path):
+# There are to ways of writing/reading repeated Z's in a linestring file.
+# So let's test both ways (different Z's in each vertice or the same Z for all of them)
+@pytest.mark.parametrize(
+    "LinestringZ",
+    [
+        "LINESTRING Z (0 0 4,0 1 3,1 1 2)",
+        "LINESTRING Z (0 0 4,0 1 4,1 1 4)",
+    ],
+)
+def test_ogr_miramon_write_basic_linestringZ(tmp_path, LinestringZ):
 
     filename = str(tmp_path / "DataSetLINESTRING")
     ds = ogr.GetDriverByName("MiramonVector").CreateDataSource(filename)
@@ -1138,7 +1193,7 @@ def test_ogr_miramon_write_basic_linestringZ(tmp_path):
     f = ogr.Feature(lyr.GetLayerDefn())
     assign_common_attributes(f)
 
-    f.SetGeometry(ogr.CreateGeometryFromWkt("LINESTRING Z (0 0 4,0 1 3,1 1 2)"))
+    f.SetGeometry(ogr.CreateGeometryFromWkt(LinestringZ))
     lyr.CreateFeature(f)
     f = None
     ds = None
@@ -1152,7 +1207,7 @@ def test_ogr_miramon_write_basic_linestringZ(tmp_path):
     assert f["NODE_INI"] == [0, 0]
     assert f["NODE_FI"] == [1, 1]
     check_common_attributes(f)
-    assert f.GetGeometryRef().ExportToIsoWkt() == "LINESTRING Z (0 0 4,0 1 3,1 1 2)"
+    assert f.GetGeometryRef().ExportToIsoWkt() == LinestringZ
     ds = None
 
 
@@ -1367,3 +1422,25 @@ def test_ogr_miramon_write_basic_multigeometry(tmp_path):
     )
 
     ds = None
+
+
+def test_ogr_miramon_create_field_after_feature(tmp_path):
+
+    filename = str(tmp_path / "DataSetMULTIPOINT")
+    ds = ogr.GetDriverByName("MiramonVector").CreateDataSource(filename)
+    srs = osr.SpatialReference()
+    srs.ImportFromEPSG(32631)
+    lyr = ds.CreateLayer("test", srs=srs, geom_type=ogr.wkbUnknown)
+    create_common_attributes(lyr)
+    f = ogr.Feature(lyr.GetLayerDefn())
+    assign_common_attributes(f)
+
+    f.SetGeometry(ogr.CreateGeometryFromWkt("MULTIPOINT (0 0, 1 0)"))
+    lyr.CreateFeature(f)
+
+    # MiraMon doesn't allow that
+    with pytest.raises(
+        Exception,
+        match="Cannot create fields to a layer with already existing features in it",
+    ):
+        create_common_attributes(lyr)

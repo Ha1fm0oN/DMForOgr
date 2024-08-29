@@ -49,6 +49,7 @@
 #include "cpl_error.h"
 #include "cpl_string.h"
 #include "cpl_vsi.h"
+#include "cpl_vsi_virtual.h"
 #include "ogr_api.h"
 #include "ogr_core.h"
 #include "ogr_feature.h"
@@ -152,7 +153,7 @@ bool OGRCSVLayer::Matches(const char *pszFieldName, char **papszPossibleNames)
 
 void OGRCSVLayer::BuildFeatureDefn(const char *pszNfdcGeomField,
                                    const char *pszGeonamesGeomFieldPrefix,
-                                   char **papszOpenOptions)
+                                   CSLConstList papszOpenOptions)
 {
     bMergeDelimiter = CPLFetchBool(papszOpenOptions, "MERGE_SEPARATOR", false);
     bEmptyStringNull =
@@ -902,7 +903,7 @@ static bool OGRCSVIsFalse(const char *pszStr)
 /*                        AutodetectFieldTypes()                        */
 /************************************************************************/
 
-char **OGRCSVLayer::AutodetectFieldTypes(char **papszOpenOptions,
+char **OGRCSVLayer::AutodetectFieldTypes(CSLConstList papszOpenOptions,
                                          int nFieldCount)
 {
     const bool bStreaming =
@@ -973,7 +974,7 @@ char **OGRCSVLayer::AutodetectFieldTypes(char **papszOpenOptions,
     std::vector<int> anFieldPrecision(nFieldCount);
     int nStringFieldCount = 0;
 
-    while (!VSIFEofL(fp))
+    while (!fp->Eof() && !fp->Error())
     {
         char **papszTokens =
             CSVReadParseLine3L(fp, m_nMaxLineSize, szDelimiter,
@@ -988,7 +989,7 @@ char **OGRCSVLayer::AutodetectFieldTypes(char **papszOpenOptions,
         if (bStreaming)
         {
             // Ignore last line if it is truncated.
-            if (VSIFEofL(fp) && nRead == static_cast<size_t>(nRequested) &&
+            if (fp->Eof() && nRead == static_cast<size_t>(nRequested) &&
                 pszData[nRead - 1] != 13 && pszData[nRead - 1] != 10)
             {
                 CSLDestroy(papszTokens);
@@ -1048,7 +1049,10 @@ char **OGRCSVLayer::AutodetectFieldTypes(char **papszOpenOptions,
                 else
                     eOGRFieldType = OFTInteger;
             }
-            else if (eType == CPL_VALUE_REAL)
+            else if (eType == CPL_VALUE_REAL ||
+                     EQUAL(papszTokens[iField], "inf") ||
+                     EQUAL(papszTokens[iField], "-inf") ||
+                     EQUAL(papszTokens[iField], "nan"))
             {
                 eOGRFieldType = OFTReal;
             }
@@ -1389,40 +1393,62 @@ OGRFeature *OGRCSVLayer::GetNextUnfilteredFeature()
         }
         if (iGeom >= 0)
         {
+            const OGRGeomFieldDefn *poGeomFieldDefn =
+                poFeatureDefn->GetGeomFieldDefn(iGeom);
             if (papszTokens[iAttr][0] != '\0' &&
-                !(poFeatureDefn->GetGeomFieldDefn(iGeom)->IsIgnored()))
+                !(poGeomFieldDefn->IsIgnored()))
             {
                 const char *pszStr = papszTokens[iAttr];
                 while (*pszStr == ' ')
                     pszStr++;
                 OGRGeometry *poGeom = nullptr;
 
-                CPLPushErrorHandler(CPLQuietErrorHandler);
-                if (OGRGeometryFactory::createFromWkt(pszStr, nullptr,
-                                                      &poGeom) == OGRERR_NONE)
+                if (EQUAL(poGeomFieldDefn->GetNameRef(), ""))
+                {
+                    if (OGRGeometryFactory::createFromWkt(
+                            pszStr, nullptr, &poGeom) != OGRERR_NONE)
+                    {
+                        CPLError(CE_Warning, CPLE_AppDefined,
+                                 "Ignoring invalid WKT: %s", pszStr);
+                        delete poGeom;
+                        poGeom = nullptr;
+                    }
+                }
+                else
+                {
+                    CPLErrorHandlerPusher oErrorHandler(CPLQuietErrorHandler);
+
+                    if (OGRGeometryFactory::createFromWkt(
+                            pszStr, nullptr, &poGeom) != OGRERR_NONE)
+                    {
+                        delete poGeom;
+                        poGeom = nullptr;
+                    }
+
+                    if (!poGeom && *pszStr == '{')
+                    {
+                        poGeom = OGRGeometry::FromHandle(
+                            OGR_G_CreateGeometryFromJson(pszStr));
+                    }
+                    else if (!poGeom && ((*pszStr >= '0' && *pszStr <= '9') ||
+                                         (*pszStr >= 'a' && *pszStr <= 'z') ||
+                                         (*pszStr >= 'A' && *pszStr <= 'Z')))
+                    {
+                        poGeom = OGRGeometryFromHexEWKB(pszStr, nullptr, FALSE);
+                    }
+                }
+
+                if (poGeom)
                 {
                     poGeom->assignSpatialReference(
-                        poFeatureDefn->GetGeomFieldDefn(iGeom)
-                            ->GetSpatialRef());
+                        poGeomFieldDefn->GetSpatialRef());
                     poFeature->SetGeomFieldDirectly(iGeom, poGeom);
                 }
-                else if (*pszStr == '{' &&
-                         (poGeom = OGRGeometry::FromHandle(
-                              OGR_G_CreateGeometryFromJson(pszStr))) != nullptr)
-                {
-                    poFeature->SetGeomFieldDirectly(iGeom, poGeom);
-                }
-                else if (((*pszStr >= '0' && *pszStr <= '9') ||
-                          (*pszStr >= 'a' && *pszStr <= 'z') ||
-                          (*pszStr >= 'A' && *pszStr <= 'Z')) &&
-                         (poGeom = OGRGeometryFromHexEWKB(pszStr, nullptr,
-                                                          FALSE)) != nullptr)
-                {
-                    poFeature->SetGeomFieldDirectly(iGeom, poGeom);
-                }
-                CPLPopErrorHandler();
             }
-            if (!bKeepGeomColumns || (iAttr == 0 && bHiddenWKTColumn))
+
+            const bool bHasAttributeField =
+                bKeepGeomColumns && !(iAttr == 0 && bHiddenWKTColumn);
+            if (!bHasAttributeField)
                 continue;
         }
 
@@ -1465,14 +1491,16 @@ OGRFeature *OGRCSVLayer::GetNextUnfilteredFeature()
                     if (chComma)
                         *chComma = '.';
                 }
-                CPLValueType eType = CPLGetValueType(papszTokens[iAttr]);
-                if (eType == CPL_VALUE_INTEGER || eType == CPL_VALUE_REAL)
+                char *endptr = nullptr;
+                const double dfVal =
+                    CPLStrtodDelim(papszTokens[iAttr], &endptr, '.');
+                if (endptr == papszTokens[iAttr] + strlen(papszTokens[iAttr]))
                 {
-                    poFeature->SetField(iOGRField, papszTokens[iAttr]);
+                    poFeature->SetField(iOGRField, dfVal);
                     if (!bWarningBadTypeOrWidth &&
                         (eFieldType == OFTInteger ||
                          eFieldType == OFTInteger64) &&
-                        eType == CPL_VALUE_REAL)
+                        CPLGetValueType(papszTokens[iAttr]) == CPL_VALUE_REAL)
                     {
                         bWarningBadTypeOrWidth = true;
                         CPLError(CE_Warning, CPLE_AppDefined,
@@ -1494,8 +1522,9 @@ OGRFeature *OGRCSVLayer::GetNextUnfilteredFeature()
                                  nNextFID, poFieldDefn->GetNameRef());
                     }
                     else if (!bWarningBadTypeOrWidth &&
-                             eType == CPL_VALUE_REAL &&
-                             poFieldDefn->GetWidth() > 0)
+                             poFieldDefn->GetWidth() > 0 &&
+                             CPLGetValueType(papszTokens[iAttr]) ==
+                                 CPL_VALUE_REAL)
                     {
                         const char *pszDot = strchr(papszTokens[iAttr], '.');
                         const int nPrecision =

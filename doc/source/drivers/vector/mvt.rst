@@ -160,6 +160,7 @@ For example, for the Finnish ETRS-TM35FIN (EPSG:3067) tiling scheme:
 Opening options
 ---------------
 
+|about-open-options|
 The following open options are available:
 
 -  .. oo:: X
@@ -223,6 +224,9 @@ with the :config:`GDAL_NUM_THREADS` configuration option.
 
 Dataset creation options
 ------------------------
+
+|about-dataset-creation-options|
+The following dataset creation options are supported:
 
 -  .. co:: NAME
 
@@ -395,6 +399,9 @@ case.
 Layer creation options
 ----------------------
 
+|about-layer-creation-options|
+The following layer creation options are supported:
+
 -  .. lco:: MINZOOM
       :choices: <integer>
 
@@ -435,7 +442,7 @@ See Also:
 -  `Mapbox Vector Tile
    Specification <https://github.com/mapbox/vector-tile-spec>`__
 -  :ref:`MBTiles <raster.mbtiles>` driver
--  `tippecanoe <https://github.com/mapbox/tippecanoe>`__: Builds vector
+-  `tippecanoe <https://github.com/felt/tippecanoe>`__: Builds vector
    tilesets from large (or small) collections of GeoJSON, Geobuf, or CSV
    features
 -  `Links to tools dealing with Mapbox Vector

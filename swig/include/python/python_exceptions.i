@@ -16,6 +16,7 @@ struct PythonBindingErrorHandlerContext
     std::string     osInitialMsg{};
     std::string     osFailureMsg{};
     CPLErrorNum     nLastCode = CPLE_None;
+    bool            bMemoryError = false;
 };
 
 static void CPL_STDCALL
@@ -46,16 +47,31 @@ PythonBindingErrorHandler(CPLErr eclass, CPLErrorNum err_no, const char *msg )
   }
   else {
     ctxt->nLastCode = err_no;
-    if( ctxt->osFailureMsg.empty() ) {
-      ctxt->osFailureMsg = msg;
-      ctxt->osInitialMsg = ctxt->osFailureMsg;
-    } else {
-      if( ctxt->osFailureMsg.size() < 10000 ) {
-        ctxt->osFailureMsg = std::string(msg) + "\nMay be caused by: " + ctxt->osFailureMsg;
-        ctxt->osInitialMsg = ctxt->osFailureMsg;
-      }
-      else
-        ctxt->osFailureMsg = std::string(msg) + "\n[...]\nMay be caused by: " + ctxt->osInitialMsg;
+    try
+    {
+        if( ctxt->osFailureMsg.empty() ) {
+          ctxt->osFailureMsg = msg;
+          ctxt->osInitialMsg = ctxt->osFailureMsg;
+        } else {
+          if( ctxt->osFailureMsg.size() < 10000 ) {
+            std::string osTmp(msg);
+            osTmp += "\nMay be caused by: ";
+            osTmp += ctxt->osFailureMsg;
+            ctxt->osFailureMsg = std::move(osTmp);
+            ctxt->osInitialMsg = ctxt->osFailureMsg;
+          }
+          else
+          {
+            std::string osTmp(msg);
+            osTmp += "\n[...]\nMay be caused by: ";
+            osTmp += ctxt->osInitialMsg;
+            ctxt->osFailureMsg = std::move(osTmp);
+          }
+        }
+    }
+    catch( const std::exception& )
+    {
+        ctxt->bMemoryError = true;
     }
   }
 }
@@ -65,7 +81,7 @@ PythonBindingErrorHandler(CPLErr eclass, CPLErrorNum err_no, const char *msg )
 %exception GetUseExceptions
 {
 %#ifdef SED_HACKS
-    if( bUseExceptions ) bLocalUseExceptionsCode = FALSE;
+    if( ReturnSame(TRUE) ) bLocalUseExceptionsCode = FALSE;
 %#endif
     result = GetUseExceptions();
 }
@@ -73,7 +89,7 @@ PythonBindingErrorHandler(CPLErr eclass, CPLErrorNum err_no, const char *msg )
 %exception _GetExceptionsLocal
 {
 %#ifdef SED_HACKS
-    if( bUseExceptions ) bLocalUseExceptionsCode = FALSE;
+    if( ReturnSame(TRUE) ) bLocalUseExceptionsCode = FALSE;
 %#endif
     $action
 }
@@ -81,7 +97,7 @@ PythonBindingErrorHandler(CPLErr eclass, CPLErrorNum err_no, const char *msg )
 %exception _SetExceptionsLocal
 {
 %#ifdef SED_HACKS
-    if( bUseExceptions ) bLocalUseExceptionsCode = FALSE;
+    if( ReturnSame(TRUE) ) bLocalUseExceptionsCode = FALSE;
 %#endif
     $action
 }
@@ -89,7 +105,7 @@ PythonBindingErrorHandler(CPLErr eclass, CPLErrorNum err_no, const char *msg )
 %exception _UserHasSpecifiedIfUsingExceptions
 {
 %#ifdef SED_HACKS
-    if( bUseExceptions ) bLocalUseExceptionsCode = FALSE;
+    if( ReturnSame(TRUE) ) bLocalUseExceptionsCode = FALSE;
 %#endif
     $action
 }
@@ -133,7 +149,7 @@ void _DontUseExceptions() {
 
 static int _UserHasSpecifiedIfUsingExceptions()
 {
-    return bUserHasSpecifiedIfUsingExceptions;
+    return bUserHasSpecifiedIfUsingExceptions || bUseExceptionsLocal >= 0;
 }
 
 %}
@@ -167,7 +183,12 @@ static void popErrorHandler()
     PythonBindingErrorHandlerContext* ctxt = static_cast<
       PythonBindingErrorHandlerContext*>(CPLGetErrorHandlerUserData());
     CPLPopErrorHandler();
-    if( !ctxt->osFailureMsg.empty() )
+    if( ctxt->bMemoryError )
+    {
+        CPLErrorSetState(
+          CE_Failure, CPLE_OutOfMemory, "Out of memory");
+    }
+    else if( !ctxt->osFailureMsg.empty() )
     {
       CPLErrorSetState(
           CPLGetLastErrorType() == CE_Failure ? CE_Failure: CE_Warning,

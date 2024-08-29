@@ -26,6 +26,7 @@
  ****************************************************************************/
 
 #include <algorithm>
+#include <cinttypes>
 #include <limits>
 #include <map>
 
@@ -765,7 +766,7 @@ netCDFGroup::netCDFGroup(const std::shared_ptr<netCDFSharedResources> &poShared,
     if (m_gid == m_poShared->GetCDFId())
     {
         int nFormat = 0;
-        nc_inq_format(m_gid, &nFormat);
+        NCDF_ERR(nc_inq_format(m_gid, &nFormat));
         if (nFormat == NC_FORMAT_CLASSIC)
         {
             m_aosStructuralInfo.SetNameValue("NC_FORMAT", "CLASSIC");
@@ -1530,10 +1531,11 @@ netCDFGroup::OpenMDArray(const std::string &osName,
     int nVarId = 0;
     if (nc_inq_varid(m_gid, osName.c_str(), &nVarId) != NC_NOERR)
         return nullptr;
+
     auto poVar = netCDFVariable::Create(
         m_poShared, std::dynamic_pointer_cast<netCDFGroup>(m_pSelf.lock()),
-        m_gid, nVarId, std::vector<std::shared_ptr<GDALDimension>>(), nullptr,
-        false);
+        m_gid, nVarId, std::vector<std::shared_ptr<GDALDimension>>(),
+        papszOptions, false);
     if (poVar)
     {
         poVar->SetUseDefaultFillAsNoData(CPLTestBool(CSLFetchNameValueDef(
@@ -2081,6 +2083,49 @@ netCDFVariable::netCDFVariable(
                      poShared->GetPAM()),
       m_poShared(poShared), m_gid(gid), m_varid(varid), m_dims(dims)
 {
+    {
+        // Cf https://docs.unidata.ucar.edu/netcdf-c/current/group__variables.html#gae6b59e92d1140b5fec56481b0f41b610
+        size_t nRawDataChunkCacheSize = 0;
+        size_t nChunkSlots = 0;
+        float fPreemption = 0.0f;
+        int ret =
+            nc_get_var_chunk_cache(m_gid, m_varid, &nRawDataChunkCacheSize,
+                                   &nChunkSlots, &fPreemption);
+        if (ret == NC_NOERR)
+        {
+            if (const char *pszVar = CSLFetchNameValue(
+                    papszOptions, "RAW_DATA_CHUNK_CACHE_SIZE"))
+            {
+                nRawDataChunkCacheSize =
+                    static_cast<size_t>(std::min<unsigned long long>(
+                        std::strtoull(pszVar, nullptr, 10),
+                        std::numeric_limits<size_t>::max()));
+            }
+            if (const char *pszVar =
+                    CSLFetchNameValue(papszOptions, "CHUNK_SLOTS"))
+            {
+                nChunkSlots = static_cast<size_t>(std::min<unsigned long long>(
+                    std::strtoull(pszVar, nullptr, 10),
+                    std::numeric_limits<size_t>::max()));
+            }
+            if (const char *pszVar =
+                    CSLFetchNameValue(papszOptions, "PREEMPTION"))
+            {
+                fPreemption = std::max(
+                    0.0f, std::min(1.0f, static_cast<float>(CPLAtof(pszVar))));
+            }
+            NCDF_ERR(nc_set_var_chunk_cache(m_gid, m_varid,
+                                            nRawDataChunkCacheSize, nChunkSlots,
+                                            fPreemption));
+        }
+        else if (ret != NC_ENOTNC4)
+        {
+            CPLError(CE_Warning, CPLE_AppDefined,
+                     "netcdf error #%d : %s .\nat (%s,%s,%d)\n", ret,
+                     nc_strerror(ret), __FILE__, __FUNCTION__, __LINE__);
+        }
+    }
+
     NCDF_ERR(nc_inq_varndims(m_gid, m_varid, &m_nDims));
     NCDF_ERR(nc_inq_vartype(m_gid, m_varid, &m_nVarType));
     if (m_nDims == 2 && m_nVarType == NC_CHAR)
@@ -2119,6 +2164,27 @@ netCDFVariable::netCDFVariable(
     }
     m_bWriteGDALTags = CPLTestBool(
         CSLFetchNameValueDef(papszOptions, "WRITE_GDAL_TAGS", "YES"));
+
+    // Non-documented option. Only used for test purposes.
+    if (CPLTestBool(CSLFetchNameValueDef(
+            papszOptions, "INCLUDE_CHUNK_CACHE_PARAMETERS_IN_STRUCTURAL_INFO",
+            "NO")))
+    {
+        size_t nRawDataChunkCacheSize = 0;
+        size_t nChunkSlots = 0;
+        float fPreemption = 0.0f;
+        NCDF_ERR(nc_get_var_chunk_cache(m_gid, m_varid, &nRawDataChunkCacheSize,
+                                        &nChunkSlots, &fPreemption));
+        m_aosStructuralInfo.SetNameValue(
+            "RAW_DATA_CHUNK_CACHE_SIZE",
+            CPLSPrintf("%" PRIu64,
+                       static_cast<uint64_t>(nRawDataChunkCacheSize)));
+        m_aosStructuralInfo.SetNameValue(
+            "CHUNK_SLOTS",
+            CPLSPrintf("%" PRIu64, static_cast<uint64_t>(nChunkSlots)));
+        m_aosStructuralInfo.SetNameValue("PREEMPTION",
+                                         CPLSPrintf("%f", fPreemption));
+    }
 }
 
 /************************************************************************/
@@ -3403,9 +3469,9 @@ bool netCDFVariable::ReadOneElement(const GDALExtendedDataType &src_datatype,
         NCDF_ERR(ret);
         if (ret != NC_NOERR)
             return false;
-        nc_free_string(1, &pszStr);
         GDALExtendedDataType::CopyValue(&pszStr, src_datatype, pDstBuffer,
                                         bufferDataType);
+        nc_free_string(1, &pszStr);
         return true;
     }
 
@@ -4671,17 +4737,18 @@ bool netCDFAttribute::IWrite(const GUInt64 *arrayStartIdx, const size_t *count,
 
     m_poShared->SetDefineMode(true);
 
+    const auto &dt(GetDataType());
     if (m_nAttType == NC_STRING)
     {
-        CPLAssert(GetDataType().GetClass() == GEDTC_STRING);
+        CPLAssert(dt.GetClass() == GEDTC_STRING);
         if (m_dims.empty())
         {
             char *pszStr = nullptr;
             const char *pszStrConst;
-            if (bufferDataType != GetDataType())
+            if (bufferDataType != dt)
             {
                 GDALExtendedDataType::CopyValue(pSrcBuffer, bufferDataType,
-                                                &pszStr, GetDataType());
+                                                &pszStr, dt);
                 pszStrConst = pszStr;
             }
             else
@@ -4698,15 +4765,16 @@ bool netCDFAttribute::IWrite(const GUInt64 *arrayStartIdx, const size_t *count,
         }
 
         int ret;
-        if (bufferDataType != GetDataType())
+        if (bufferDataType != dt)
         {
             std::vector<char *> apszStrings(count[0]);
-            const char **ppszStr;
-            memcpy(&ppszStr, &pSrcBuffer, sizeof(const char **));
+            const auto nInputDTSize = bufferDataType.GetSize();
+            const GByte *pabySrcBuffer = static_cast<const GByte *>(pSrcBuffer);
             for (size_t i = 0; i < count[0]; i++)
             {
-                GDALExtendedDataType::CopyValue(&ppszStr[i], bufferDataType,
-                                                &apszStrings[i], GetDataType());
+                GDALExtendedDataType::CopyValue(pabySrcBuffer, bufferDataType,
+                                                &apszStrings[i], dt);
+                pabySrcBuffer += nInputDTSize * bufferStride[0];
             }
             ret = nc_put_att_string(m_gid, m_varid, GetName().c_str(), count[0],
                                     const_cast<const char **>(&apszStrings[0]));
@@ -4730,14 +4798,14 @@ bool netCDFAttribute::IWrite(const GUInt64 *arrayStartIdx, const size_t *count,
 
     if (m_nAttType == NC_CHAR)
     {
-        CPLAssert(GetDataType().GetClass() == GEDTC_STRING);
+        CPLAssert(dt.GetClass() == GEDTC_STRING);
         CPLAssert(m_dims.empty());
         char *pszStr = nullptr;
         const char *pszStrConst;
-        if (bufferDataType != GetDataType())
+        if (bufferDataType != dt)
         {
             GDALExtendedDataType::CopyValue(pSrcBuffer, bufferDataType, &pszStr,
-                                            GetDataType());
+                                            dt);
             pszStrConst = pszStr;
         }
         else
@@ -4754,7 +4822,6 @@ bool netCDFAttribute::IWrite(const GUInt64 *arrayStartIdx, const size_t *count,
         return true;
     }
 
-    const auto &dt(GetDataType());
     if (dt.GetClass() == GEDTC_NUMERIC &&
         dt.GetNumericDataType() == GDT_Unknown)
     {

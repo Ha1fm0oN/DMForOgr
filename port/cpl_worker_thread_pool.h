@@ -34,8 +34,10 @@
 #include "cpl_list.h"
 
 #include <condition_variable>
+#include <functional>
 #include <memory>
 #include <mutex>
+#include <queue>
 #include <vector>
 
 /**
@@ -46,7 +48,6 @@
  */
 
 #ifndef DOXYGEN_SKIP
-struct CPLWorkerThreadJob;
 class CPLWorkerThreadPool;
 
 struct CPLWorkerThread
@@ -73,6 +74,8 @@ typedef enum
 #endif  // ndef DOXYGEN_SKIP
 
 class CPLJobQueue;
+/// Unique pointer to a job queue.
+using CPLJobQueuePtr = std::unique_ptr<CPLJobQueue>;
 
 /** Pool of worker threads */
 class CPL_DLL CPLWorkerThreadPool
@@ -80,10 +83,10 @@ class CPL_DLL CPLWorkerThreadPool
     CPL_DISALLOW_COPY_ASSIGN(CPLWorkerThreadPool)
 
     std::vector<std::unique_ptr<CPLWorkerThread>> aWT{};
-    std::mutex m_mutex{};
+    mutable std::mutex m_mutex{};
     std::condition_variable m_cv{};
     volatile CPLWorkerThreadState eState = CPLWTS_OK;
-    CPLList *psJobQueue = nullptr;
+    std::queue<std::function<void()>> jobQueue;
     int nPendingJobs = 0;
 
     CPLList *psWaitingWorkerThreadsList = nullptr;
@@ -94,28 +97,27 @@ class CPL_DLL CPLWorkerThreadPool
     static void WorkerThreadFunction(void *user_data);
 
     void DeclareJobFinished();
-    CPLWorkerThreadJob *GetNextJob(CPLWorkerThread *psWorkerThread);
+    std::function<void()> GetNextJob(CPLWorkerThread *psWorkerThread);
 
   public:
     CPLWorkerThreadPool();
+    explicit CPLWorkerThreadPool(int nThreads);
     ~CPLWorkerThreadPool();
 
     bool Setup(int nThreads, CPLThreadFunc pfnInitFunc, void **pasInitData);
     bool Setup(int nThreads, CPLThreadFunc pfnInitFunc, void **pasInitData,
                bool bWaitallStarted);
 
-    std::unique_ptr<CPLJobQueue> CreateJobQueue();
+    CPLJobQueuePtr CreateJobQueue();
 
+    bool SubmitJob(std::function<void()> task);
     bool SubmitJob(CPLThreadFunc pfnFunc, void *pData);
     bool SubmitJobs(CPLThreadFunc pfnFunc, const std::vector<void *> &apData);
     void WaitCompletion(int nMaxRemainingJobs = 0);
     void WaitEvent();
 
     /** Return the number of threads setup */
-    int GetThreadCount() const
-    {
-        return m_nMaxThreads;
-    }
+    int GetThreadCount() const;
 };
 
 /** Job queue */
@@ -127,7 +129,6 @@ class CPL_DLL CPLJobQueue
     std::condition_variable m_cv{};
     int m_nPendingJobs = 0;
 
-    static void JobQueueFunction(void *);
     void DeclareJobFinished();
 
     //! @cond Doxygen_Suppress
@@ -146,7 +147,9 @@ class CPL_DLL CPLJobQueue
     }
 
     bool SubmitJob(CPLThreadFunc pfnFunc, void *pData);
+    bool SubmitJob(std::function<void()> task);
     void WaitCompletion(int nMaxRemainingJobs = 0);
+    bool WaitEvent();
 };
 
 #endif  // CPL_WORKER_THREAD_POOL_H_INCLUDED_

@@ -61,13 +61,11 @@
         return ret;                                                            \
     }
 
-CPLErr GDALProxyDataset::IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff,
-                                   int nXSize, int nYSize, void *pData,
-                                   int nBufXSize, int nBufYSize,
-                                   GDALDataType eBufType, int nBandCount,
-                                   int *panBandMap, GSpacing nPixelSpace,
-                                   GSpacing nLineSpace, GSpacing nBandSpace,
-                                   GDALRasterIOExtraArg *psExtraArg)
+CPLErr GDALProxyDataset::IRasterIO(
+    GDALRWFlag eRWFlag, int nXOff, int nYOff, int nXSize, int nYSize,
+    void *pData, int nBufXSize, int nBufYSize, GDALDataType eBufType,
+    int nBandCount, BANDMAP_TYPE panBandMap, GSpacing nPixelSpace,
+    GSpacing nLineSpace, GSpacing nBandSpace, GDALRasterIOExtraArg *psExtraArg)
 {
     CPLErr ret;
     GDALDataset *poUnderlyingDataset = RefUnderlyingDataset();
@@ -337,6 +335,25 @@ CPLErr GDALProxyRasterBand::IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff,
     else
     {
         ret = CE_Failure;
+    }
+    return ret;
+}
+
+int GDALProxyRasterBand::IGetDataCoverageStatus(int nXOff, int nYOff,
+                                                int nXSize, int nYSize,
+                                                int nMaskFlagStop,
+                                                double *pdfDataPct)
+{
+    if (pdfDataPct)
+        *pdfDataPct = 0.0;
+    int ret = GDAL_DATA_COVERAGE_STATUS_UNIMPLEMENTED |
+              GDAL_DATA_COVERAGE_STATUS_EMPTY;
+    GDALRasterBand *poSrcBand = RefUnderlyingRasterBand();
+    if (poSrcBand)
+    {
+        ret = poSrcBand->GetDataCoverageStatus(nXOff, nYOff, nXSize, nYSize,
+                                               nMaskFlagStop, pdfDataPct);
+        UnrefUnderlyingRasterBand(poSrcBand);
     }
     return ret;
 }

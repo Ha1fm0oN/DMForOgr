@@ -380,19 +380,19 @@ OGRBoolean OGRCompoundCurve::Equals(const OGRGeometry *poOther) const
 /*                       setCoordinateDimension()                       */
 /************************************************************************/
 
-void OGRCompoundCurve::setCoordinateDimension(int nNewDimension)
+bool OGRCompoundCurve::setCoordinateDimension(int nNewDimension)
 {
-    oCC.setCoordinateDimension(this, nNewDimension);
+    return oCC.setCoordinateDimension(this, nNewDimension);
 }
 
-void OGRCompoundCurve::set3D(OGRBoolean bIs3D)
+bool OGRCompoundCurve::set3D(OGRBoolean bIs3D)
 {
-    oCC.set3D(this, bIs3D);
+    return oCC.set3D(this, bIs3D);
 }
 
-void OGRCompoundCurve::setMeasured(OGRBoolean bIsMeasured)
+bool OGRCompoundCurve::setMeasured(OGRBoolean bIsMeasured)
 {
-    oCC.setMeasured(this, bIsMeasured);
+    return oCC.setMeasured(this, bIsMeasured);
 }
 
 /************************************************************************/
@@ -667,9 +667,9 @@ void OGRCompoundCurve::flattenTo2D()
 /*                              segmentize()                            */
 /************************************************************************/
 
-void OGRCompoundCurve::segmentize(double dfMaxLength)
+bool OGRCompoundCurve::segmentize(double dfMaxLength)
 {
-    oCC.segmentize(dfMaxLength);
+    return oCC.segmentize(dfMaxLength);
 }
 
 /************************************************************************/
@@ -969,4 +969,40 @@ double OGRCompoundCurve::get_AreaOfCurveSegments() const
         dfArea += poPart->get_AreaOfCurveSegments();
     }
     return dfArea;
+}
+
+/************************************************************************/
+/*                           hasEmptyParts()                            */
+/************************************************************************/
+
+bool OGRCompoundCurve::hasEmptyParts() const
+{
+    return oCC.hasEmptyParts();
+}
+
+/************************************************************************/
+/*                          removeEmptyParts()                          */
+/************************************************************************/
+
+void OGRCompoundCurve::removeEmptyParts()
+{
+    oCC.removeEmptyParts();
+}
+
+/************************************************************************/
+/*                           reversePoints()                            */
+/************************************************************************/
+
+/**
+ * \brief Reverse point order.
+ *
+ * This method updates the points in this curve in place
+ * reversing the point ordering (first for last, etc) and component ordering.
+ *
+ * @since 3.10
+ */
+void OGRCompoundCurve::reversePoints()
+
+{
+    oCC.reversePoints();
 }

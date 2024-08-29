@@ -1359,18 +1359,8 @@ def test_netcdf_36():
 
     gt = ds.GetGeoTransform()
     assert gt is not None, "got no GeoTransform"
-    gt_expected = (
-        -3.498749944898817,
-        0.0025000042385525173,
-        0.0,
-        46.61749818589952,
-        0.0,
-        -0.001666598849826389,
-    )
-    assert gt == gt_expected, "got GeoTransform %s, expected %s" % (
-        str(gt),
-        str(gt_expected),
-    )
+    gt_expected = (-3.49875, 0.0025, 0.0, 46.61749818589952, 0.0, -0.001666598849826389)
+    assert gt == pytest.approx(gt_expected, rel=1e-8)
 
 
 ###############################################################################
@@ -2189,10 +2179,12 @@ def test_netcdf_52():
     f = None
     ds = None
 
-    import netcdf_cf
-
-    if netcdf_cf.cfchecks_available():
-        netcdf_cf.netcdf_cf_check_file("tmp/netcdf_52.nc", "auto")
+    # Latest release version of cfchecker (4.1.0) doesn't support variable-length
+    # strings as valid variable types, but next one will:
+    # https://github.com/cedadev/cf-checker/blob/c0486c606f7cf4d38d3b484b427726ce1bde73ee/src/cfchecker/cfchecks.py#L745
+    # import netcdf_cf
+    # if netcdf_cf.cfchecks_available():
+    #     netcdf_cf.netcdf_cf_check_file("tmp/netcdf_52.nc", "auto")
 
     gdal.Unlink("tmp/netcdf_52.nc")
     gdal.Unlink("tmp/netcdf_52.csv")
@@ -2660,10 +2652,13 @@ def test_netcdf_62():
         assert "char station(profile" in hdr
         assert "char foo(record" in hdr
 
-    import netcdf_cf
-
-    if netcdf_cf.cfchecks_available():
-        netcdf_cf.netcdf_cf_check_file("tmp/netcdf_62.nc", "auto")
+    # Disable cfchecker validation as it fails with a '(5): co-ordinate variable not monotonic'
+    # error which I believe is incorrect given the particular nature of
+    # a https://cfconventions.org/Data/cf-conventions/cf-conventions-1.11/cf-conventions.html#_indexed_ragged_array_representation_of_profiles
+    # where coordinate variables can clearly not be sorted in any order.
+    # import netcdf_cf
+    # if netcdf_cf.cfchecks_available():
+    #    netcdf_cf.netcdf_cf_check_file("tmp/netcdf_62.nc", "auto")
 
     gdal.Unlink("tmp/netcdf_62.nc")
 
@@ -6516,6 +6511,32 @@ def test_band_names_creation_option(tmp_path):
 
 
 @gdaltest.enable_exceptions()
+def test_band_names_creation_option_createcopy(tmp_path):
+
+    fname = tmp_path / "out.nc"
+
+    # 1 band, 2 names
+    with pytest.raises(Exception, match="but 2 names provided"):
+        src_ds = gdal.GetDriverByName("MEM").Create("", 1, 1)
+        gdal.GetDriverByName("NetCDF").CreateCopy(
+            fname, src_ds, options={"BAND_NAMES": "t2m,prate"}
+        )
+
+    # 2 bands, 2 names
+    src_ds = gdal.GetDriverByName("MEM").Create("", 1, 1, 2)
+    with gdal.GetDriverByName("NetCDF").CreateCopy(
+        fname, src_ds, options={"BAND_NAMES": "t2m,prate"}
+    ):
+        pass
+
+    with gdal.Open(fname) as ds:
+        sds_names = [sds[0] for sds in ds.GetSubDatasets()]
+
+        assert gdal.GetSubdatasetInfo(sds_names[0]).GetSubdatasetComponent() == "t2m"
+        assert gdal.GetSubdatasetInfo(sds_names[1]).GetSubdatasetComponent() == "prate"
+
+
+@gdaltest.enable_exceptions()
 def test_netcdf_create_metadata_with_equal_sign(tmp_path):
 
     fname = tmp_path / "test_netcdf_create_metadata_with_equal_sign.nc"
@@ -6529,3 +6550,26 @@ def test_netcdf_create_metadata_with_equal_sign(tmp_path):
 
     ds = gdal.Open(fname)
     assert ds.GetRasterBand(1).GetMetadataItem("long_name") == value
+
+
+###############################################################################
+# Test force opening a HDF55 file with netCDF driver
+
+
+def test_netcdf_force_opening_hdf5_file(tmp_vsimem):
+
+    ds = gdal.OpenEx("data/hdf5/groups.h5", allowed_drivers=["netCDF"])
+    assert ds.GetDriver().GetDescription() == "netCDF"
+
+    ds = gdal.Open(ds.GetSubDatasets()[0][0])
+    assert ds.GetDriver().GetDescription() == "netCDF"
+
+
+###############################################################################
+# Test force opening, but provided file is still not recognized (for good reasons)
+
+
+def test_netcdf_force_opening_no_match():
+
+    drv = gdal.IdentifyDriverEx("data/byte.tif", allowed_drivers=["netCDF"])
+    assert drv is None

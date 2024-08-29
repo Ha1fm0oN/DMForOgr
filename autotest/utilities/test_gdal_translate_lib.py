@@ -293,6 +293,18 @@ def test_gdal_translate_lib_nodata_int64():
 
 
 ###############################################################################
+# Test nodata=-inf
+
+
+def test_gdal_translate_lib_nodata_minus_inf():
+
+    ds = gdal.Translate(
+        "", "../gcore/data/float32.tif", format="MEM", noData=float("-inf")
+    )
+    assert ds.GetRasterBand(1).GetNoDataValue() == float("-inf"), "Bad nodata value"
+
+
+###############################################################################
 # Test srcWin option
 
 
@@ -1143,6 +1155,20 @@ def test_gdal_translate_lib_scale_and_unscale_incompatible():
 
 
 ###############################################################################
+# Test -a_offset -inf (dummy example, but to prove -inf works as a value
+# numeric value)
+
+
+@gdaltest.enable_exceptions()
+def test_gdal_translate_lib_assign_offset():
+
+    out_ds = gdal.Translate(
+        "", gdal.Open("../gcore/data/byte.tif"), options="-f MEM -a_offset -inf"
+    )
+    assert out_ds.GetRasterBand(1).GetOffset() == float("-inf")
+
+
+###############################################################################
 # Test option argument handling
 
 
@@ -1255,11 +1281,15 @@ def test_gdal_translate_ovr_rpc():
     src_rpc = src_ds.GetMetadata("RPC")
     ovr_rpc = ds.GetMetadata("RPC")
     assert ovr_rpc
-    assert float(ovr_rpc["LINE_OFF"]) == pytest.approx(0.5 * float(src_rpc["LINE_OFF"]))
+    assert float(ovr_rpc["LINE_OFF"]) == pytest.approx(
+        0.5 * (float(src_rpc["LINE_OFF"]) + 0.5) - 0.5
+    )
     assert float(ovr_rpc["LINE_SCALE"]) == pytest.approx(
         0.5 * float(src_rpc["LINE_SCALE"])
     )
-    assert float(ovr_rpc["SAMP_OFF"]) == pytest.approx(0.5 * float(src_rpc["SAMP_OFF"]))
+    assert float(ovr_rpc["SAMP_OFF"]) == pytest.approx(
+        0.5 * (float(src_rpc["SAMP_OFF"]) + 0.5) - 0.5
+    )
     assert float(ovr_rpc["SAMP_SCALE"]) == pytest.approx(
         0.5 * float(src_rpc["SAMP_SCALE"])
     )

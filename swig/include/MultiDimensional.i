@@ -691,8 +691,8 @@ public:
   {
 
     const int nExpectedDims = (int)GDALMDArrayGetDimensionCount(self);
-    std::vector<size_t> count_internal(nExpectedDims);
-    if( nExpectedDims != 1 )
+    std::vector<size_t> count_internal(nExpectedDims + 1);
+    if( nExpectedDims > 1 )
     {
         CPLError(CE_Failure, CPLE_AppDefined,
             "Unsupported number of dimensions");
@@ -707,23 +707,26 @@ public:
             return CE_Failure;
         }
     }
-    if( nDims1 != 1 )
+    if( nExpectedDims == 1 )
     {
-        CPLError(CE_Failure, CPLE_AppDefined,
-            "Wrong number of values in array_start_idx");
-        return CE_Failure;
-    }
-    if( nDims2 != 1 )
-    {
-        CPLError(CE_Failure, CPLE_AppDefined,
-            "Wrong number of values in count");
-        return CE_Failure;
-    }
-    if( nDims3 != 1 )
-    {
-        CPLError(CE_Failure, CPLE_AppDefined,
-            "Wrong number of values in array_step");
-        return CE_Failure;
+        if( nDims1 != 1 )
+        {
+            CPLError(CE_Failure, CPLE_AppDefined,
+                "Wrong number of values in array_start_idx");
+            return CE_Failure;
+        }
+        if( nDims2 != 1 )
+        {
+            CPLError(CE_Failure, CPLE_AppDefined,
+                "Wrong number of values in count");
+            return CE_Failure;
+        }
+        if( nDims3 != 1 )
+        {
+            CPLError(CE_Failure, CPLE_AppDefined,
+                "Wrong number of values in array_step");
+            return CE_Failure;
+        }
     }
 
     CPLErr eErr = GDALMDArrayWrite(self,
@@ -1160,6 +1163,18 @@ public:
 %clear OSRSpatialReferenceShadow**;
 #endif
 
+
+#if defined(SWIGPYTHON)
+%newobject GetMeshGrid;
+%apply (int object_list_count, GDALMDArrayHS **poObjects) {(int nInputArrays, GDALMDArrayHS **ahInputArrays)};
+%apply (GDALMDArrayHS*** parrays, size_t* pnCount) {(GDALMDArrayHS*** outputArrays, size_t* pnCountOutputArrays)};
+  static void GetMeshGrid(int nInputArrays, GDALMDArrayHS **ahInputArrays,
+                          GDALMDArrayHS*** outputArrays, size_t* pnCountOutputArrays, char **options = 0)
+  {
+    *outputArrays = GDALMDArrayGetMeshGrid(ahInputArrays, nInputArrays, pnCountOutputArrays, options);
+  }
+#endif
+
   bool Cache( char** options = NULL )
   {
       return GDALMDArrayCache(self, options);
@@ -1272,6 +1287,10 @@ public:
     return GDALAttributeReadAsInt(self);
   }
 
+  long long ReadAsInt64() {
+    return GDALAttributeReadAsInt64(self);
+  }
+
   double ReadAsDouble() {
     return GDALAttributeReadAsDouble(self);
   }
@@ -1285,6 +1304,12 @@ public:
 #if defined(SWIGPYTHON)
   void ReadAsIntArray( int** pvals, size_t* pnCount ) {
     *pvals = GDALAttributeReadAsIntArray(self, pnCount);
+  }
+#endif
+
+#if defined(SWIGPYTHON)
+  void ReadAsInt64Array( long long** pvals, size_t* pnCount ) {
+    *pvals = (long long*)GDALAttributeReadAsInt64Array(self, pnCount);
   }
 #endif
 
@@ -1327,10 +1352,29 @@ public:
     return GDALAttributeWriteInt(self, val) ? CE_None : CE_Failure;
   }
 
+  CPLErr WriteInt64(long long val)
+  {
+    return GDALAttributeWriteInt64(self, val) ? CE_None : CE_Failure;
+  }
+
   CPLErr WriteDouble(double val)
   {
     return GDALAttributeWriteDouble(self, val) ? CE_None : CE_Failure;
   }
+
+#if defined(SWIGPYTHON)
+  CPLErr WriteIntArray(int nList, int* pList)
+  {
+    return GDALAttributeWriteIntArray(self, pList, nList) ? CE_None : CE_Failure;
+  }
+#endif
+
+#if defined(SWIGPYTHON)
+  CPLErr WriteInt64Array(int nList, long long* pList)
+  {
+    return GDALAttributeWriteInt64Array(self, (int64_t*)pList, nList) ? CE_None : CE_Failure;
+  }
+#endif
 
 #if defined(SWIGPYTHON)
   CPLErr WriteDoubleArray(int nList, double* pList)

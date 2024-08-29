@@ -34,6 +34,8 @@
 #include <new>
 #include <utility>
 
+constexpr const char *const apszCSVDriver[] = {"CSV", nullptr};
+
 /***********************************************************************/
 /*                         OGRGTFSDataset                              */
 /***********************************************************************/
@@ -73,7 +75,7 @@ OGRLayer *OGRGTFSDataset::GetLayer(int nIdx)
 
 class OGRGTFSLayer final : public OGRLayer
 {
-    std::string m_osDirname{};
+    const std::string m_osDirname;
     std::unique_ptr<GDALDataset> m_poUnderlyingDS{};
     OGRLayer *m_poUnderlyingLayer = nullptr;  // owned by m_poUnderlyingDS
     OGRFeatureDefn *m_poFeatureDefn = nullptr;
@@ -96,7 +98,6 @@ class OGRGTFSLayer final : public OGRLayer
     OGRFeature *GetNextFeature() override;
     int TestCapability(const char *) override;
     GIntBig GetFeatureCount(int bForce) override;
-    OGRErr SetAttributeFilter(const char *) override;
 
     OGRFeatureDefn *GetLayerDefn() override
     {
@@ -212,7 +213,8 @@ void OGRGTFSLayer::PrepareTripsData()
     {
         {
             auto poStopsDS = std::unique_ptr<GDALDataset>(GDALDataset::Open(
-                (m_osDirname + "/stops.txt").c_str(), GDAL_OF_VECTOR));
+                std::string(m_osDirname).append("/stops.txt").c_str(),
+                GDAL_OF_VECTOR, apszCSVDriver));
             if (!poStopsDS)
                 return;
             auto poStopsLyr = poStopsDS->GetLayer(0);
@@ -237,7 +239,8 @@ void OGRGTFSLayer::PrepareTripsData()
         }
 
         auto poStopTimesDS = std::unique_ptr<GDALDataset>(GDALDataset::Open(
-            (m_osDirname + "/stop_times.txt").c_str(), GDAL_OF_VECTOR));
+            std::string(m_osDirname).append("/stop_times.txt").c_str(),
+            GDAL_OF_VECTOR, apszCSVDriver));
         if (!poStopTimesDS)
             return;
         auto poStopTimesLyr = poStopTimesDS->GetLayer(0);
@@ -349,21 +352,12 @@ OGRFeature *OGRGTFSLayer::GetNextFeature()
                 }
             }
         }
-        if (m_poFilterGeom == nullptr ||
-            FilterGeometry(poFeature->GetGeometryRef()))
+        if ((!m_poFilterGeom || FilterGeometry(poFeature->GetGeometryRef())) &&
+            (!m_poAttrQuery || m_poAttrQuery->Evaluate(poFeature.get())))
         {
             return poFeature.release();
         }
     }
-}
-
-/***********************************************************************/
-/*                       SetAttributeFilter()                          */
-/***********************************************************************/
-
-OGRErr OGRGTFSLayer::SetAttributeFilter(const char *pszFilter)
-{
-    return m_poUnderlyingLayer->SetAttributeFilter(pszFilter);
 }
 
 /***********************************************************************/
@@ -372,7 +366,7 @@ OGRErr OGRGTFSLayer::SetAttributeFilter(const char *pszFilter)
 
 GIntBig OGRGTFSLayer::GetFeatureCount(int bForce)
 {
-    if (m_poFilterGeom != nullptr)
+    if (m_poFilterGeom || m_poAttrQuery)
         return OGRLayer::GetFeatureCount(bForce);
     return m_poUnderlyingLayer->GetFeatureCount(bForce);
 }
@@ -564,6 +558,11 @@ int OGRGTFSDataset::Identify(GDALOpenInfo *poOpenInfo)
     if (STARTS_WITH(poOpenInfo->pszFilename, "GTFS:"))
         return TRUE;
 
+    if (poOpenInfo->IsSingleAllowedDriver("GTFS") && poOpenInfo->bIsDirectory)
+    {
+        return TRUE;
+    }
+
     if (!EQUAL(CPLGetExtension(poOpenInfo->pszFilename), "zip"))
         return FALSE;
 
@@ -618,45 +617,39 @@ GDALDataset *OGRGTFSDataset::Open(GDALOpenInfo *poOpenInfo)
     if (!Identify(poOpenInfo))
         return nullptr;
 
-    const char *pszFilename = poOpenInfo->pszFilename;
-    if (STARTS_WITH(pszFilename, "GTFS:"))
-        pszFilename += strlen("GTFS:");
+    const char *pszGTFSFilename = poOpenInfo->pszFilename;
+    if (STARTS_WITH(pszGTFSFilename, "GTFS:"))
+        pszGTFSFilename += strlen("GTFS:");
 
-    std::string osBaseDir(pszFilename);
-    if (!STARTS_WITH(pszFilename, "/vsizip/") &&
-        EQUAL(CPLGetExtension(pszFilename), "zip"))
-    {
-        osBaseDir = "/vsizip/{";
-        osBaseDir += pszFilename;
-        osBaseDir += '}';
-    }
-
-    const std::string osCSVBaseDirPrefix(std::string("CSV:") + osBaseDir);
+    const std::string osBaseDir(
+        (!STARTS_WITH(pszGTFSFilename, "/vsizip/") &&
+         EQUAL(CPLGetExtension(pszGTFSFilename), "zip"))
+            ? std::string("/vsizip/{").append(pszGTFSFilename).append("}")
+            : std::string(pszGTFSFilename));
 
     auto poDS = std::make_unique<OGRGTFSDataset>();
 
-    char **papszFilenames = VSIReadDir(osBaseDir.c_str());
+    const CPLStringList aosFilenames(VSIReadDir(osBaseDir.c_str()));
     size_t nCountFound = 0;
     std::string osShapesFilename;
-    for (CSLConstList papszIter = papszFilenames; papszIter && *papszIter;
-         ++papszIter)
+    for (const char *pszFilename : cpl::Iterate(aosFilenames))
     {
-        if (!EQUAL(CPLGetExtension(*papszIter), "txt"))
+        if (!EQUAL(CPLGetExtension(pszFilename), "txt"))
             continue;
         for (const char *pszFilenameInDir : apszRequiredFiles)
         {
-            if (EQUAL(*papszIter, pszFilenameInDir))
+            if (EQUAL(pszFilename, pszFilenameInDir))
             {
                 nCountFound++;
                 break;
             }
         }
-        if (EQUAL(*papszIter, "shapes.txt"))
-            osShapesFilename = *papszIter;
+        if (EQUAL(pszFilename, "shapes.txt"))
+            osShapesFilename = pszFilename;
 
-        auto poCSVDataset = std::unique_ptr<GDALDataset>(
-            GDALDataset::Open((osCSVBaseDirPrefix + '/' + *papszIter).c_str(),
-                              GDAL_OF_VERBOSE_ERROR | GDAL_OF_VECTOR));
+        auto poCSVDataset = std::unique_ptr<GDALDataset>(GDALDataset::Open(
+            std::string(osBaseDir).append("/").append(pszFilename).c_str(),
+            GDAL_OF_VERBOSE_ERROR | GDAL_OF_VECTOR, apszCSVDriver));
         if (poCSVDataset)
         {
             auto poUnderlyingLayer = poCSVDataset->GetLayer(0);
@@ -667,13 +660,12 @@ GDALDataset *OGRGTFSDataset::Open(GDALOpenInfo *poOpenInfo)
                 {
                     poDS->m_apoLayers.emplace_back(
                         std::make_unique<OGRGTFSLayer>(
-                            osCSVBaseDirPrefix, CPLGetBasename(*papszIter),
+                            osBaseDir, CPLGetBasename(pszFilename),
                             std::move(poCSVDataset)));
                 }
             }
         }
     }
-    CSLDestroy(papszFilenames);
 
     if (nCountFound != sizeof(apszRequiredFiles) / sizeof(apszRequiredFiles[0]))
     {
@@ -685,8 +677,8 @@ GDALDataset *OGRGTFSDataset::Open(GDALOpenInfo *poOpenInfo)
     if (!osShapesFilename.empty())
     {
         auto poCSVDataset = std::unique_ptr<GDALDataset>(GDALDataset::Open(
-            (osCSVBaseDirPrefix + '/' + osShapesFilename).c_str(),
-            GDAL_OF_VERBOSE_ERROR | GDAL_OF_VECTOR));
+            std::string(osBaseDir).append("/").append(osShapesFilename).c_str(),
+            GDAL_OF_VERBOSE_ERROR | GDAL_OF_VECTOR, apszCSVDriver));
         if (poCSVDataset)
         {
             auto poUnderlyingLayer = poCSVDataset->GetLayer(0);

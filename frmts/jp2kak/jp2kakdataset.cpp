@@ -1150,12 +1150,13 @@ GDALDataset *JP2KAKDataset::Open(GDALOpenInfo *poOpenInfo)
          */
         poDS->SetDescription(poOpenInfo->pszFilename);
         if (!bIsSubfile)
-            poDS->TryLoadXML();
+            poDS->TryLoadXML(poOpenInfo->GetSiblingFiles());
         else
             poDS->nPamFlags |= GPF_NOSAVE;
 
         // Check for external overviews.
-        poDS->oOvManager.Initialize(poDS, osPhysicalFilename);
+        poDS->oOvManager.Initialize(poDS, poOpenInfo,
+                                    osPhysicalFilename.c_str());
 
         // Confirm the requested access is supported.
         if (poOpenInfo->eAccess == GA_Update)
@@ -1239,13 +1240,11 @@ class vector_safe_bool
 /*                           DirectRasterIO()                           */
 /************************************************************************/
 
-CPLErr JP2KAKDataset::DirectRasterIO(GDALRWFlag /* eRWFlag */, int nXOff,
-                                     int nYOff, int nXSize, int nYSize,
-                                     void *pData, int nBufXSize, int nBufYSize,
-                                     GDALDataType eBufType, int nBandCount,
-                                     int *panBandMap, GSpacing nPixelSpace,
-                                     GSpacing nLineSpace, GSpacing nBandSpace,
-                                     GDALRasterIOExtraArg *psExtraArg)
+CPLErr JP2KAKDataset::DirectRasterIO(
+    GDALRWFlag /* eRWFlag */, int nXOff, int nYOff, int nXSize, int nYSize,
+    void *pData, int nBufXSize, int nBufYSize, GDALDataType eBufType,
+    int nBandCount, const int *panBandMap, GSpacing nPixelSpace,
+    GSpacing nLineSpace, GSpacing nBandSpace, GDALRasterIOExtraArg *psExtraArg)
 
 {
     if (psExtraArg->eResampleAlg != GRIORA_NearestNeighbour &&
@@ -1598,7 +1597,7 @@ CPLErr JP2KAKDataset::IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff,
                                 int nXSize, int nYSize, void *pData,
                                 int nBufXSize, int nBufYSize,
                                 GDALDataType eBufType, int nBandCount,
-                                int *panBandMap, GSpacing nPixelSpace,
+                                BANDMAP_TYPE panBandMap, GSpacing nPixelSpace,
                                 GSpacing nLineSpace, GSpacing nBandSpace,
                                 GDALRasterIOExtraArg *psExtraArg)
 
@@ -2904,7 +2903,9 @@ static GDALDataset *JP2KAKCreateCopy(const char *pszFilename,
         std::vector<int> precisions(num_components);
         for (int i = 0; i < num_components; ++i)
         {
-            stripe_bufs[i] = pBuffer + nXSize * nDataTypeSizeBytes * i;
+            stripe_bufs[i] = pBuffer + static_cast<size_t>(nXSize) *
+                                           nDataTypeSizeBytes * i *
+                                           stripe_height;
             is_signed[i] = CPL_TO_BOOL(GDALDataTypeIsSigned(eType));
             precisions[i] = nBits;
         }
@@ -2919,6 +2920,9 @@ static GDALDataset *JP2KAKCreateCopy(const char *pszFilename,
                 for (int i = 0; i < num_components; ++i)
                 {
                     stripe_heights[i] = nHeight;
+                    stripe_bufs[i] = pBuffer + static_cast<size_t>(nXSize) *
+                                                   nDataTypeSizeBytes * i *
+                                                   nHeight;
                 }
             }
             if (poSrcDS->RasterIO(GF_Read, 0, iY, nXSize, nHeight, pBuffer,

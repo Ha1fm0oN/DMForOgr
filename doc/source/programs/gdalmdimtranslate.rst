@@ -26,6 +26,7 @@ Synopsis
                       [-subset <subset_spec>]...
                       [-scaleaxes <scaleaxes_spec>]
                       [-oo <NAME>=<VALUE>]...
+                      [-strict]
                        <src_filename> <dst_filename>
 
 
@@ -117,7 +118,7 @@ The following command line parameters can appear in any order.
 
     Performs a subsetting (trimming or slicing) operation along a dimension,
     provided that it is indexed by a 1D variable of numeric or string data type,
-    and whose values are monotically sorted.
+    and whose values are monotonically sorted.
     <subset_spec> follows exactly the `OGC WCS 2.0 KVP encoding <https://portal.opengeospatial.org/files/09-147r3>`__
     for subsetting.
 
@@ -142,6 +143,12 @@ The following command line parameters can appear in any order.
     That is <dim1_name>(<scale_factor>)[,<dim2_name>(<scale_factor>)]...
 
     Using -scaleaxes is incompatible of specifying a *view* option in -array.
+
+.. option:: -strict
+
+    By default, some failures during the translation are tolerated, such as not
+    being able to write group attributes. When setting this option, such
+    failures will cause the process to fail.
 
 .. option:: -oo <NAME>=<VALUE>
 

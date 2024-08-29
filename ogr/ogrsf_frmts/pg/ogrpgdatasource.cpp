@@ -831,12 +831,12 @@ int OGRPGDataSource::Open(const char *pszNewName, int bUpdate, int bTestOpen,
             if (EQUAL(pszTypname, "geometry"))
             {
                 bHavePostGIS = TRUE;
-                nGeometryOID = atoi(pszOid);
+                nGeometryOID = static_cast<Oid>(strtoul(pszOid, nullptr, 10));
             }
             else if (CPLTestBool(CPLGetConfigOption("PG_USE_GEOGRAPHY", "YES")))
             {
                 bHaveGeography = TRUE;
-                nGeographyOID = atoi(pszOid);
+                nGeographyOID = static_cast<Oid>(strtoul(pszOid, nullptr, 10));
             }
         }
     }
@@ -1211,10 +1211,14 @@ void OGRPGDataSource::LoadTables()
             osCommand += " ORDER BY oid, attnum";
         }
         else
-            osCommand.Printf("SELECT c.relname, n.nspname FROM "
-                             "pg_class c, pg_namespace n "
-                             "WHERE (c.relkind in (%s) AND c.relname !~ '^pg_' "
-                             "AND c.relnamespace=n.oid)",
+            osCommand.Printf("SELECT c.relname, n.nspname, d.description FROM "
+                             "pg_class c "
+                             "JOIN pg_namespace n ON c.relnamespace=n.oid "
+                             "LEFT JOIN pg_description d "
+                             "ON d.objoid = c.oid AND d.classoid = "
+                             "'pg_class'::regclass::oid AND d.objsubid = 0 "
+                             "WHERE (c.relkind in (%s) AND "
+                             "c.relname !~ '^pg_')",
                              pszAllowedRelations);
 
         PGresult *hResult = OGRPG_PQexec(hPGConn, osCommand.c_str());
@@ -1257,13 +1261,18 @@ void OGRPGDataSource::LoadTables()
                 bNullable = EQUAL(PQgetvalue(hResult, iRecord, 7), "f");
                 pszDescription = PQgetvalue(hResult, iRecord, 8);
             }
+            else
+            {
+                pszDescription = PQgetvalue(hResult, iRecord, 2);
+            }
 
             if (EQUAL(pszTable, "spatial_ref_sys") ||
                 EQUAL(pszTable, "geometry_columns") ||
                 EQUAL(pszTable, "geography_columns"))
                 continue;
 
-            if (EQUAL(pszSchemaName, "information_schema"))
+            if (EQUAL(pszSchemaName, "information_schema") ||
+                EQUAL(pszSchemaName, "ogr_system_tables"))
                 continue;
 
             int GeomTypeFlags = 0;
@@ -1580,7 +1589,9 @@ OGRLayer *OGRPGDataSource::ICreateLayer(const char *pszLayerName,
             pszTableName = OGRPGCommonLaunderName(pszDotPos + 1, "PG",
                                                   bUTF8ToASCII);  // skip "."
         else
-            pszTableName = CPLStrdup(pszDotPos + 1);  // skip "."
+            pszTableName = CPLStrdup(
+                OGRPGCommonGenerateShortEnoughIdentifier(pszDotPos + 1)
+                    .c_str());  // skip "."
     }
     else
     {
@@ -1589,7 +1600,9 @@ OGRLayer *OGRPGDataSource::ICreateLayer(const char *pszLayerName,
             pszTableName = OGRPGCommonLaunderName(pszLayerName, "PG",
                                                   bUTF8ToASCII);  // skip "."
         else
-            pszTableName = CPLStrdup(pszLayerName);  // skip "."
+            pszTableName =
+                CPLStrdup(OGRPGCommonGenerateShortEnoughIdentifier(pszLayerName)
+                              .c_str());  // skip "."
     }
 
     /* -------------------------------------------------------------------- */
@@ -1825,6 +1838,14 @@ OGRLayer *OGRPGDataSource::ICreateLayer(const char *pszLayerName,
         CPLString osCommand;
         if (eType != wkbNone && !bHavePostGIS)
         {
+            if (pszGFldName && !EQUAL(pszGFldName, "wkb_geometry"))
+            {
+                CPLError(CE_Warning, CPLE_AppDefined,
+                         "GEOMETRY_NAME=%s ignored, and set instead to "
+                         "'wkb_geometry' as it is the only geometry column "
+                         "name recognized for non-PostGIS enabled databases.",
+                         pszGFldName);
+            }
             pszGFldName = "wkb_geometry";
             osCommand.Printf("%s ( "
                              "    %s %s, "
@@ -1919,32 +1940,11 @@ OGRLayer *OGRPGDataSource::ICreateLayer(const char *pszLayerName,
 
         if (eType != wkbNone && bHavePostGIS && bCreateSpatialIndex)
         {
-            /* --------------------------------------------------------------------
-             */
-            /*      Create the spatial index. */
-            /*                                                                      */
-            /*      We're doing this before we add geometry and record to the
-             * table */
-            /*      so this may not be exactly the best way to do it. */
-            /* --------------------------------------------------------------------
-             */
-            std::string osIndexName(pszTableName);
-            std::string osSuffix("_");
-            osSuffix += pszGFldName;
-            osSuffix += "_geom_idx";
-            if (bLaunder)
-            {
-                if (osSuffix.size() >=
-                    static_cast<size_t>(OGR_PG_NAMEDATALEN - 1))
-                {
-                    osSuffix = "_0_geom_idx";
-                }
-                if (osIndexName.size() + osSuffix.size() >
-                    static_cast<size_t>(OGR_PG_NAMEDATALEN - 1))
-                    osIndexName.resize(OGR_PG_NAMEDATALEN - 1 -
-                                       osSuffix.size());
-            }
-            osIndexName += osSuffix;
+            // Create the spatial index.
+            // We're doing this before we add geometry and record to the
+            // table, so this may not be exactly the best way to do it.
+            const std::string osIndexName(OGRPGCommonGenerateSpatialIndexName(
+                pszTableName, pszGFldName, 0));
 
             osCommand.Printf("CREATE INDEX %s ON %s.%s USING %s (%s)",
                              OGRPGEscapeColumnName(osIndexName.c_str()).c_str(),
@@ -2096,6 +2096,8 @@ OGRPGDataSource::FindSchema(const char *pszSchemaNameIn)
     {
         return pszSchemaNameIn;
     }
+
+    EndCopy();
 
     std::string osSchemaName;
     std::string osCommand(
@@ -2552,7 +2554,7 @@ OGRErr OGRPGDataSource::StartTransaction(CPL_UNUSED int bForce)
     }
 
     nSoftTransactionLevel++;
-    bUserTransactionActive = TRUE;
+    bUserTransactionActive = true;
 
     /*CPLDebug("PG", "poDS=%p StartTransaction() nSoftTransactionLevel=%d",
              this, nSoftTransactionLevel);*/
@@ -2585,7 +2587,7 @@ OGRErr OGRPGDataSource::CommitTransaction()
     }
 
     nSoftTransactionLevel--;
-    bUserTransactionActive = FALSE;
+    bUserTransactionActive = false;
 
     if (bSavePointActive)
     {
@@ -2630,7 +2632,7 @@ OGRErr OGRPGDataSource::RollbackTransaction()
     FlushCache(false);
 
     nSoftTransactionLevel--;
-    bUserTransactionActive = FALSE;
+    bUserTransactionActive = false;
 
     OGRErr eErr;
     if (bSavePointActive)
@@ -3141,4 +3143,250 @@ OGRErr OGRPGDataSource::EndCopy()
     }
     else
         return OGRERR_NONE;
+}
+
+/************************************************************************/
+/*                     CreateMetadataTableIfNeeded()                    */
+/************************************************************************/
+
+bool OGRPGDataSource::CreateMetadataTableIfNeeded()
+{
+    if (m_bCreateMetadataTableIfNeededRun)
+        return m_bCreateMetadataTableIfNeededSuccess;
+
+    m_bCreateMetadataTableIfNeededRun = true;
+
+    PGresult *hResult;
+
+    hResult = OGRPG_PQexec(
+        hPGConn,
+        "SELECT c.oid FROM pg_class c "
+        "JOIN pg_namespace n ON c.relnamespace=n.oid "
+        "WHERE c.relname = 'metadata' AND n.nspname = 'ogr_system_tables'");
+    const bool bFound =
+        (hResult && PQntuples(hResult) == 1 && !PQgetisnull(hResult, 0, 0));
+    OGRPGClearResult(hResult);
+
+    hResult = OGRPG_PQexec(
+        hPGConn,
+        "SELECT has_database_privilege((select current_database()), 'CREATE')");
+    const bool bCanCreateSchema =
+        (hResult && PQntuples(hResult) == 1 && !PQgetisnull(hResult, 0, 0) &&
+         strcmp(PQgetvalue(hResult, 0, 0), "t") == 0);
+    OGRPGClearResult(hResult);
+
+    if (!bFound)
+    {
+        if (!bCanCreateSchema)
+        {
+            CPLError(CE_Warning, CPLE_AppDefined,
+                     "User lacks CREATE SCHEMA privilege to be able to create "
+                     "ogr_system_tables.metadata table");
+            return false;
+        }
+    }
+    else
+    {
+        if (!HasWritePermissionsOnMetadataTable())
+        {
+            return false;
+        }
+        if (!bCanCreateSchema)
+        {
+            CPLError(CE_Warning, CPLE_AppDefined,
+                     "User lacks CREATE SCHEMA privilege. Assuming "
+                     "ogr_system_tables.metadata table has correct structure");
+            m_bCreateMetadataTableIfNeededSuccess = true;
+            return true;
+        }
+    }
+
+    hResult =
+        OGRPG_PQexec(hPGConn, "CREATE SCHEMA IF NOT EXISTS ogr_system_tables");
+    if (!hResult || (PQresultStatus(hResult) != PGRES_COMMAND_OK &&
+                     PQresultStatus(hResult) != PGRES_TUPLES_OK))
+    {
+        OGRPGClearResult(hResult);
+        return false;
+    }
+    OGRPGClearResult(hResult);
+
+    hResult = OGRPG_PQexec(
+        hPGConn, "CREATE TABLE IF NOT EXISTS ogr_system_tables.metadata("
+                 "id SERIAL, "
+                 "schema_name TEXT NOT NULL, "
+                 "table_name TEXT NOT NULL, "
+                 "metadata TEXT,"
+                 "UNIQUE(schema_name, table_name))");
+    if (!hResult || (PQresultStatus(hResult) != PGRES_COMMAND_OK &&
+                     PQresultStatus(hResult) != PGRES_TUPLES_OK))
+    {
+        OGRPGClearResult(hResult);
+        return false;
+    }
+    OGRPGClearResult(hResult);
+
+    hResult = OGRPG_PQexec(
+        hPGConn,
+        "DROP FUNCTION IF EXISTS "
+        "ogr_system_tables.event_trigger_function_for_metadata() CASCADE");
+    if (!hResult || (PQresultStatus(hResult) != PGRES_COMMAND_OK &&
+                     PQresultStatus(hResult) != PGRES_TUPLES_OK))
+    {
+        OGRPGClearResult(hResult);
+        return false;
+    }
+    OGRPGClearResult(hResult);
+
+    hResult = OGRPG_PQexec(
+        hPGConn,
+        "CREATE FUNCTION "
+        "ogr_system_tables.event_trigger_function_for_metadata()\n"
+        "RETURNS event_trigger LANGUAGE plpgsql AS $$\n"
+        "DECLARE\n"
+        "    obj record;\n"
+        "BEGIN\n"
+        "  IF has_schema_privilege('ogr_system_tables', 'USAGE') THEN\n"
+        "   IF has_table_privilege('ogr_system_tables.metadata', 'DELETE') "
+        "THEN\n"
+        "    FOR obj IN SELECT * FROM pg_event_trigger_dropped_objects()\n"
+        "    LOOP\n"
+        "        IF obj.object_type = 'table' THEN\n"
+        "            DELETE FROM ogr_system_tables.metadata m WHERE "
+        "m.schema_name = obj.schema_name AND m.table_name = "
+        "obj.object_name;\n"
+        "        END IF;\n"
+        "    END LOOP;\n"
+        "   END IF;\n"
+        "  END IF;\n"
+        "END;\n"
+        "$$;");
+    if (!hResult || (PQresultStatus(hResult) != PGRES_COMMAND_OK &&
+                     PQresultStatus(hResult) != PGRES_TUPLES_OK))
+    {
+        OGRPGClearResult(hResult);
+        return false;
+    }
+    OGRPGClearResult(hResult);
+
+    hResult =
+        OGRPG_PQexec(hPGConn, "DROP EVENT TRIGGER IF EXISTS "
+                              "ogr_system_tables_event_trigger_for_metadata");
+    if (!hResult || (PQresultStatus(hResult) != PGRES_COMMAND_OK &&
+                     PQresultStatus(hResult) != PGRES_TUPLES_OK))
+    {
+        OGRPGClearResult(hResult);
+        return false;
+    }
+    OGRPGClearResult(hResult);
+
+    hResult = OGRPG_PQexec(
+        hPGConn,
+        "CREATE EVENT TRIGGER ogr_system_tables_event_trigger_for_metadata "
+        "ON sql_drop "
+        "EXECUTE FUNCTION "
+        "ogr_system_tables.event_trigger_function_for_metadata()");
+    if (!hResult || (PQresultStatus(hResult) != PGRES_COMMAND_OK &&
+                     PQresultStatus(hResult) != PGRES_TUPLES_OK))
+    {
+        OGRPGClearResult(hResult);
+        return false;
+    }
+    OGRPGClearResult(hResult);
+
+    m_bCreateMetadataTableIfNeededSuccess = true;
+    m_bOgrSystemTablesMetadataTableExistenceTested = true;
+    m_bOgrSystemTablesMetadataTableFound = true;
+    return true;
+}
+
+/************************************************************************/
+/*                    HasOgrSystemTablesMetadataTable()                 */
+/************************************************************************/
+
+bool OGRPGDataSource::HasOgrSystemTablesMetadataTable()
+{
+    if (!m_bOgrSystemTablesMetadataTableExistenceTested &&
+        CPLTestBool(CPLGetConfigOption("OGR_PG_ENABLE_METADATA", "YES")))
+    {
+        m_bOgrSystemTablesMetadataTableExistenceTested = true;
+        // Check that the ogr_system_tables.metadata table exists (without
+        // causing errors that might abort transactions)
+        PGresult *hResult = OGRPG_PQexec(
+            hPGConn,
+            "SELECT c.oid FROM pg_class c "
+            "JOIN pg_namespace n ON c.relnamespace=n.oid "
+            "WHERE c.relname = 'metadata' AND n.nspname = 'ogr_system_tables'");
+        const bool bFound =
+            (hResult && PQntuples(hResult) == 1 && !PQgetisnull(hResult, 0, 0));
+        OGRPGClearResult(hResult);
+        if (!bFound)
+            return false;
+
+        hResult = OGRPG_PQexec(
+            hPGConn,
+            "SELECT has_schema_privilege('ogr_system_tables', 'USAGE')");
+        const bool bHasSchemaPrivilege =
+            (hResult && PQntuples(hResult) == 1 &&
+             !PQgetisnull(hResult, 0, 0) &&
+             strcmp(PQgetvalue(hResult, 0, 0), "t") == 0);
+        OGRPGClearResult(hResult);
+        if (!bHasSchemaPrivilege)
+        {
+            CPLError(CE_Warning, CPLE_AppDefined,
+                     "Table ogr_system_tables.metadata exists but user lacks "
+                     "USAGE privilege on ogr_system_tables schema");
+            return false;
+        }
+
+        hResult = OGRPG_PQexec(
+            hPGConn, "SELECT has_table_privilege('ogr_system_tables.metadata', "
+                     "'SELECT')");
+        m_bOgrSystemTablesMetadataTableFound =
+            (hResult && PQntuples(hResult) == 1 &&
+             !PQgetisnull(hResult, 0, 0) &&
+             strcmp(PQgetvalue(hResult, 0, 0), "t") == 0);
+        OGRPGClearResult(hResult);
+        if (!m_bOgrSystemTablesMetadataTableFound)
+        {
+            CPLError(CE_Warning, CPLE_AppDefined,
+                     "Table ogr_system_tables.metadata exists but user lacks "
+                     "SELECT privilege on it");
+        }
+    }
+    return m_bOgrSystemTablesMetadataTableFound;
+}
+
+/************************************************************************/
+/*                   HasWritePermissionsOnMetadataTable()               */
+/************************************************************************/
+
+bool OGRPGDataSource::HasWritePermissionsOnMetadataTable()
+{
+    if (!m_bHasWritePermissionsOnMetadataTableRun)
+    {
+        m_bHasWritePermissionsOnMetadataTableRun = true;
+
+        if (HasOgrSystemTablesMetadataTable())
+        {
+            PGresult *hResult = OGRPG_PQexec(
+                hPGConn,
+                "SELECT has_table_privilege('ogr_system_tables.metadata', "
+                "'INSERT') "
+                "AND    has_table_privilege('ogr_system_tables.metadata', "
+                "'DELETE')");
+            m_bHasWritePermissionsOnMetadataTableSuccess =
+                (hResult && PQntuples(hResult) == 1 &&
+                 !PQgetisnull(hResult, 0, 0) &&
+                 strcmp(PQgetvalue(hResult, 0, 0), "t") == 0);
+            OGRPGClearResult(hResult);
+            if (!m_bHasWritePermissionsOnMetadataTableSuccess)
+            {
+                CPLError(CE_Warning, CPLE_AppDefined,
+                         "User lacks INSERT and/OR DELETE privilege on "
+                         "ogr_system_tables.metadata table");
+            }
+        }
+    }
+    return m_bHasWritePermissionsOnMetadataTableSuccess;
 }

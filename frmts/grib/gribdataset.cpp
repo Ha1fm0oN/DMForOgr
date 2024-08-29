@@ -43,6 +43,12 @@
 #include <fcntl.h>
 #endif
 
+#ifndef _WIN32
+#include <unistd.h>  // isatty()
+#else
+#include <io.h>  // _isatty()
+#endif
+
 #include <algorithm>
 #include <set>
 #include <string>
@@ -903,14 +909,70 @@ CPLErr GRIBRasterBand::LoadData()
 }
 
 /************************************************************************/
+/*                       IsGdalinfoInteractive()                        */
+/************************************************************************/
+
+#ifdef BUILD_APPS
+static bool IsGdalinfoInteractive()
+{
+    static const bool bIsGdalinfoInteractive = []()
+    {
+#ifndef _WIN32
+        if (isatty(static_cast<int>(fileno(stdout))))
+#else
+        if (_isatty(_fileno(stdout)))
+#endif
+        {
+            std::string osPath;
+            osPath.resize(1024);
+            if (CPLGetExecPath(&osPath[0], static_cast<int>(osPath.size())))
+            {
+                osPath = CPLGetBasename(osPath.c_str());
+            }
+            return osPath == "gdalinfo";
+        }
+        return false;
+    }();
+    return bIsGdalinfoInteractive;
+}
+#endif
+
+/************************************************************************/
 /*                             GetMetaData()                            */
 /************************************************************************/
 char **GRIBRasterBand::GetMetadata(const char *pszDomain)
 {
     FindMetaData();
-    if (m_nGribVersion == 2 &&
+    if ((pszDomain == nullptr || pszDomain[0] == 0) && m_nGribVersion == 2 &&
         CPLTestBool(CPLGetConfigOption("GRIB_PDS_ALL_BANDS", "ON")))
     {
+#ifdef BUILD_APPS
+        // Detect slow execution of e.g.
+        // "gdalinfo /vsis3/noaa-hrrr-bdp-pds/hrrr.20220804/conus/hrrr.t00z.wrfsfcf01.grib2"
+        GRIBDataset *poGDS = static_cast<GRIBDataset *>(poDS);
+        if (poGDS->m_bSideCarIdxUsed && !poGDS->m_bWarnedGdalinfoNomd &&
+            poGDS->GetRasterCount() > 10 &&
+            !VSIIsLocal(poGDS->GetDescription()) && IsGdalinfoInteractive())
+        {
+            if (poGDS->m_nFirstMetadataQueriedTimeStamp)
+            {
+                if (time(nullptr) - poGDS->m_nFirstMetadataQueriedTimeStamp > 2)
+                {
+                    poGDS->m_bWarnedGdalinfoNomd = true;
+
+                    CPLError(
+                        CE_Warning, CPLE_AppDefined,
+                        "If metadata does not matter, faster result could be "
+                        "obtained by adding the -nomd switch to gdalinfo");
+                }
+            }
+            else
+            {
+                poGDS->m_nFirstMetadataQueriedTimeStamp = time(nullptr);
+            }
+        }
+#endif
+
         FindPDSTemplateGRIB2();
     }
     return GDALPamRasterBand::GetMetadata(pszDomain);
@@ -922,11 +984,16 @@ char **GRIBRasterBand::GetMetadata(const char *pszDomain)
 const char *GRIBRasterBand::GetMetadataItem(const char *pszName,
                                             const char *pszDomain)
 {
-    FindMetaData();
-    if (m_nGribVersion == 2 &&
-        CPLTestBool(CPLGetConfigOption("GRIB_PDS_ALL_BANDS", "ON")))
+    if (!((!pszDomain || pszDomain[0] == 0) &&
+          (EQUAL(pszName, "STATISTICS_MINIMUM") ||
+           EQUAL(pszName, "STATISTICS_MAXIMUM"))))
     {
-        FindPDSTemplateGRIB2();
+        FindMetaData();
+        if (m_nGribVersion == 2 &&
+            CPLTestBool(CPLGetConfigOption("GRIB_PDS_ALL_BANDS", "ON")))
+        {
+            FindPDSTemplateGRIB2();
+        }
     }
     return GDALPamRasterBand::GetMetadataItem(pszName, pszDomain);
 }
@@ -1007,6 +1074,34 @@ double GRIBRasterBand::GetNoDataValue(int *pbSuccess)
     if (m_Grib_MetaData == nullptr)
     {
         GRIBDataset *poGDS = static_cast<GRIBDataset *>(poDS);
+
+#ifdef BUILD_APPS
+        // Detect slow execution of e.g.
+        // "gdalinfo /vsis3/noaa-hrrr-bdp-pds/hrrr.20220804/conus/hrrr.t00z.wrfsfcf01.grib2"
+
+        if (poGDS->m_bSideCarIdxUsed && !poGDS->m_bWarnedGdalinfoNonodata &&
+            poGDS->GetRasterCount() > 10 &&
+            !VSIIsLocal(poGDS->GetDescription()) && IsGdalinfoInteractive())
+        {
+            if (poGDS->m_nFirstNodataQueriedTimeStamp)
+            {
+                if (time(nullptr) - poGDS->m_nFirstNodataQueriedTimeStamp > 2)
+                {
+                    poGDS->m_bWarnedGdalinfoNonodata = true;
+
+                    CPLError(CE_Warning, CPLE_AppDefined,
+                             "If nodata value does not matter, faster result "
+                             "could be obtained by adding the -nonodata switch "
+                             "to gdalinfo");
+                }
+            }
+            else
+            {
+                poGDS->m_nFirstNodataQueriedTimeStamp = time(nullptr);
+            }
+        }
+#endif
+
         ReadGribData(poGDS->fp, start, subgNum, nullptr, &m_Grib_MetaData);
         if (m_Grib_MetaData == nullptr)
         {
@@ -1156,7 +1251,8 @@ class InventoryWrapperGrib : public gdal::grib::InventoryWrapper
 class InventoryWrapperSidecar : public gdal::grib::InventoryWrapper
 {
   public:
-    explicit InventoryWrapperSidecar(VSILFILE *fp)
+    explicit InventoryWrapperSidecar(VSILFILE *fp, uint64_t nStartOffset,
+                                     int64_t nSize)
         : gdal::grib::InventoryWrapper()
     {
         result_ = -1;
@@ -1164,26 +1260,25 @@ class InventoryWrapperSidecar : public gdal::grib::InventoryWrapper
         size_t length = static_cast<size_t>(VSIFTellL(fp));
         if (length > 4 * 1024 * 1024)
             return;
-        std::string psSidecar;
-        psSidecar.resize(length);
+        std::string osSidecar;
+        osSidecar.resize(length);
         VSIFSeekL(fp, 0, SEEK_SET);
-        if (VSIFReadL(&psSidecar[0], length, 1, fp) != 1)
+        if (VSIFReadL(&osSidecar[0], length, 1, fp) != 1)
             return;
 
-        CPLStringList aosMsgs(
-            CSLTokenizeString2(psSidecar.c_str(), "\n",
+        const CPLStringList aosMsgs(
+            CSLTokenizeString2(osSidecar.c_str(), "\n",
                                CSLT_PRESERVEQUOTES | CSLT_STRIPLEADSPACES));
-        inv_len_ = aosMsgs.size();
         inv_ = static_cast<inventoryType *>(
-            CPLMalloc(inv_len_ * sizeof(inventoryType)));
+            CPLCalloc(aosMsgs.size(), sizeof(inventoryType)));
 
-        for (size_t i = 0; i < inv_len_; ++i)
+        for (const char *pszMsg : aosMsgs)
         {
             // We are parsing
             // "msgNum[.subgNum]:start:dontcare:name1:name2:name3" For NOMADS:
             // "msgNum[.subgNum]:start:reftime:var:level:time"
-            CPLStringList aosTokens(CSLTokenizeString2(
-                aosMsgs[i], ":", CSLT_PRESERVEQUOTES | CSLT_ALLOWEMPTYTOKENS));
+            const CPLStringList aosTokens(CSLTokenizeString2(
+                pszMsg, ":", CSLT_PRESERVEQUOTES | CSLT_ALLOWEMPTYTOKENS));
             CPLStringList aosNum;
 
             if (aosTokens.size() < 6)
@@ -1200,7 +1295,7 @@ class InventoryWrapperSidecar : public gdal::grib::InventoryWrapper
                 goto err_sidecar;
 
             if (aosNum.size() < 2)
-                inv_[i].subgNum = 0;
+                inv_[inv_len_].subgNum = 0;
             else
             {
                 auto subgNum = strtol(aosNum[1], &endptr, 10);
@@ -1211,21 +1306,29 @@ class InventoryWrapperSidecar : public gdal::grib::InventoryWrapper
                 // .idx file use a 1-based indexing, whereas DEGRIB uses a
                 // 0-based one
                 subgNum--;
-                inv_[i].subgNum = static_cast<unsigned short>(subgNum);
+                inv_[inv_len_].subgNum = static_cast<unsigned short>(subgNum);
             }
 
-            inv_[i].start = strtoll(aosTokens[1], &endptr, 10);
+            inv_[inv_len_].start = strtoll(aosTokens[1], &endptr, 10);
             if (*endptr != 0)
                 goto err_sidecar;
 
-            inv_[i].unitName = nullptr;
-            inv_[i].comment = nullptr;
-            inv_[i].element = nullptr;
-            inv_[i].shortFstLevel = nullptr;
+            if (inv_[inv_len_].start < nStartOffset)
+                continue;
+            if (nSize > 0 && inv_[inv_len_].start >= nStartOffset + nSize)
+                break;
+
+            inv_[inv_len_].start -= nStartOffset;
+
+            inv_[inv_len_].unitName = nullptr;
+            inv_[inv_len_].comment = nullptr;
+            inv_[inv_len_].element = nullptr;
+            inv_[inv_len_].shortFstLevel = nullptr;
             // This is going into the description field ->
             // the only one available before loading the metadata
-            inv_[i].longFstLevel = VSIStrdup(CPLSPrintf(
+            inv_[inv_len_].longFstLevel = VSIStrdup(CPLSPrintf(
                 "%s:%s:%s", aosTokens[3], aosTokens[4], aosTokens[5]));
+            ++inv_len_;
 
             continue;
 
@@ -1233,8 +1336,7 @@ class InventoryWrapperSidecar : public gdal::grib::InventoryWrapper
             CPLDebug("GRIB",
                      "Failed parsing sidecar entry '%s', "
                      "falling back to constructing an inventory",
-                     aosMsgs[i]);
-            inv_len_ = static_cast<unsigned>(i);
+                     pszMsg);
             return;
         }
 
@@ -1304,27 +1406,51 @@ CPLErr GRIBDataset::GetGeoTransform(double *padfTransform)
 /************************************************************************/
 
 std::unique_ptr<gdal::grib::InventoryWrapper>
-GRIBDataset::Inventory(VSILFILE *fp, GDALOpenInfo *poOpenInfo)
+GRIBDataset::Inventory(GDALOpenInfo *poOpenInfo)
 {
     std::unique_ptr<gdal::grib::InventoryWrapper> pInventories;
 
     VSIFSeekL(fp, 0, SEEK_SET);
-    CPLString sSideCarFilename = CPLString(poOpenInfo->pszFilename) + ".idx";
+    std::string osSideCarFilename(poOpenInfo->pszFilename);
+    uint64_t nStartOffset = 0;
+    int64_t nSize = -1;
+    if (STARTS_WITH(poOpenInfo->pszFilename, "/vsisubfile/"))
+    {
+        const char *pszPtr = poOpenInfo->pszFilename + strlen("/vsisubfile/");
+        const char *pszComma = strchr(pszPtr, ',');
+        if (pszComma)
+        {
+            const CPLStringList aosTokens(CSLTokenizeString2(
+                std::string(pszPtr, pszComma - pszPtr).c_str(), "_", 0));
+            if (aosTokens.size() == 2)
+            {
+                nStartOffset = std::strtoull(aosTokens[0], nullptr, 10);
+                nSize = std::strtoll(aosTokens[1], nullptr, 10);
+                osSideCarFilename = pszComma + 1;
+            }
+        }
+    }
+    osSideCarFilename += ".idx";
     VSILFILE *fpSideCar = nullptr;
     if (CPLTestBool(CSLFetchNameValueDef(poOpenInfo->papszOpenOptions,
                                          "USE_IDX", "YES")) &&
-        ((fpSideCar = VSIFOpenL(sSideCarFilename, "rb")) != nullptr))
+        ((fpSideCar = VSIFOpenL(osSideCarFilename.c_str(), "rb")) != nullptr))
     {
         CPLDebug("GRIB", "Reading inventories from sidecar file %s",
-                 sSideCarFilename.c_str());
+                 osSideCarFilename.c_str());
         // Contains an GRIB2 message inventory of the file.
-        pInventories = std::make_unique<InventoryWrapperSidecar>(fpSideCar);
+        pInventories = std::make_unique<InventoryWrapperSidecar>(
+            fpSideCar, nStartOffset, nSize);
         if (pInventories->result() <= 0 || pInventories->length() == 0)
             pInventories = nullptr;
         VSIFCloseL(fpSideCar);
+#ifdef BUILD_APPS
+        m_bSideCarIdxUsed = true;
+#endif
     }
     else
-        CPLDebug("GRIB", "Failed opening sidecar %s", sSideCarFilename.c_str());
+        CPLDebug("GRIB", "Failed opening sidecar %s",
+                 osSideCarFilename.c_str());
 
     if (pInventories == nullptr)
     {
@@ -1414,7 +1540,7 @@ GDALDataset *GRIBDataset::Open(GDALOpenInfo *poOpenInfo)
     // The band-data that is read is stored into the first RasterBand,
     // simply so that the same portion of the file is not read twice.
 
-    auto pInventories = Inventory(poDS->fp, poOpenInfo);
+    auto pInventories = poDS->Inventory(poOpenInfo);
     if (pInventories->result() <= 0)
     {
         char *errMsg = errSprintf(nullptr);
@@ -1492,11 +1618,10 @@ GDALDataset *GRIBDataset::Open(GDALOpenInfo *poOpenInfo)
     // Release hGRIBMutex otherwise we'll deadlock with GDALDataset own
     // hGRIBMutex.
     CPLReleaseMutex(hGRIBMutex);
-    poDS->TryLoadXML();
+    poDS->TryLoadXML(poOpenInfo->GetSiblingFiles());
 
     // Check for external overviews.
-    poDS->oOvManager.Initialize(poDS, poOpenInfo->pszFilename,
-                                poOpenInfo->GetSiblingFiles());
+    poDS->oOvManager.Initialize(poDS, poOpenInfo);
     CPLAcquireMutex(hGRIBMutex, 1000.0);
 
     return poDS;
@@ -2021,7 +2146,14 @@ void GRIBArray::Finalize(GRIBGroup *poGroup, inventoryType *psInv)
         attr->Write("validity_time");
     }
 
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wnull-dereference"
+#endif
     m_dims.insert(m_dims.begin(), poDimTime);
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
     if (m_poSRS)
     {
         auto mapping = m_poSRS->GetDataAxisToSRSAxisMapping();

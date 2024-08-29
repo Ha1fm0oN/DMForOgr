@@ -81,6 +81,9 @@ GDALContourAppOptionsGetParser(GDALContourOptions *psOptions)
         "For more details, consult the full documentation for the gdal_contour "
         "utility: http://gdal.org/gdal_contour.html"));
 
+    argParser->add_extra_usage_hint(
+        _("One of -i, -fl or -e must be specified."));
+
     argParser->add_argument("-b")
         .metavar("<name>")
         .default_value(1)
@@ -131,19 +134,10 @@ GDALContourAppOptionsGetParser(GDALContourOptions *psOptions)
 
     argParser->add_output_format_argument(psOptions->osFormat);
 
-    argParser->add_argument("-dsco")
-        .metavar("<NAME>=<VALUE>")
-        .append()
-        .action([psOptions](const std::string &s)
-                { psOptions->aosOpenOptions.AddString(s.c_str()); })
-        .help(_("Dataset creation option (format specific)."));
+    argParser->add_dataset_creation_options_argument(psOptions->aosOpenOptions);
 
-    argParser->add_argument("-lco")
-        .metavar("<NAME>=<VALUE>")
-        .append()
-        .action([psOptions](const std::string &s)
-                { psOptions->aosCreationOptions.AddString(s.c_str()); })
-        .help(_("Layer creation option (format specific)."));
+    argParser->add_layer_creation_options_argument(
+        psOptions->aosCreationOptions);
 
     auto &group = argParser->add_mutually_exclusive_group();
 
@@ -153,20 +147,20 @@ GDALContourAppOptionsGetParser(GDALContourOptions *psOptions)
         .store_into(psOptions->dfInterval)
         .help(_("Elevation interval between contours."));
 
-    group.add_argument("-fl")
-        .metavar("<level>")
-        .nargs(argparse::nargs_pattern::at_least_one)
-        .scan<'g', double>()
-        .action([psOptions](const std::string &s)
-                { psOptions->adfFixedLevels.push_back(CPLAtof(s.c_str())); })
-        .help(_("Name one or more \"fixed levels\" to extract."));
-
     group.add_argument("-e")
         .metavar("<base>")
         .scan<'g', double>()
         .store_into(psOptions->dfExpBase)
         .help(_("Generate levels on an exponential scale: base ^ k, for k an "
                 "integer."));
+
+    argParser->add_argument("-fl")
+        .metavar("<level>")
+        .nargs(argparse::nargs_pattern::at_least_one)
+        .scan<'g', double>()
+        .action([psOptions](const std::string &s)
+                { psOptions->adfFixedLevels.push_back(CPLAtof(s.c_str())); })
+        .help(_("Name one or more \"fixed levels\" to extract."));
 
     argParser->add_argument("-off")
         .metavar("<offset>")
@@ -259,6 +253,13 @@ MAIN_START(argc, argv)
     {
         auto argParser = GDALContourAppOptionsGetParser(&sOptions);
         argParser->parse_args_without_binary_name(argv + 1);
+
+        if (sOptions.dfInterval == 0.0 && sOptions.adfFixedLevels.empty() &&
+            sOptions.dfExpBase == 0.0)
+        {
+            fprintf(stderr, "%s\n", argParser->usage().c_str());
+            exit(1);
+        }
     }
     catch (const std::exception &error)
     {
@@ -443,7 +444,8 @@ MAIN_START(argc, argv)
         }
         options = CSLAddString(options, values.c_str());
     }
-    else if (sOptions.dfExpBase != 0.0)
+
+    if (sOptions.dfExpBase != 0.0)
     {
         options =
             CSLAppendPrintf(options, "LEVEL_EXP_BASE=%f", sOptions.dfExpBase);

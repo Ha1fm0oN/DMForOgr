@@ -676,19 +676,20 @@ def test_vrtprocesseddataset_dehazing_different_resolution(tmp_vsimem):
     src_ds.GetRasterBand(1).WriteArray(
         np.array([[1, 1, 2, 2, 3, 3], [1, 1, 2, 2, 3, 3]])
     )
-    src_ds.SetGeoTransform([0, 0.5, 0, 0, 0, 0.5])
+    src_ds.SetGeoTransform([0, 0.5 * 10, 0, 0, 0, 0.5 * 10])
+    src_ds.BuildOverviews("NEAR", [2])
     src_ds.Close()
 
     gain_filename = str(tmp_vsimem / "gain.tif")
     gain_ds = gdal.GetDriverByName("GTiff").Create(gain_filename, 3, 1, 1)
     gain_ds.GetRasterBand(1).WriteArray(np.array([[2, 4, 6]]))
-    gain_ds.SetGeoTransform([0, 1, 0, 0, 0, 1])
+    gain_ds.SetGeoTransform([0, 1 * 10, 0, 0, 0, 1 * 10])
     gain_ds.Close()
 
     offset_filename = str(tmp_vsimem / "offset.tif")
     offset_ds = gdal.GetDriverByName("GTiff").Create(offset_filename, 3, 1, 1)
     offset_ds.GetRasterBand(1).WriteArray(np.array([[1, 2, 3]]))
-    offset_ds.SetGeoTransform([0, 1, 0, 0, 0, 1])
+    offset_ds.SetGeoTransform([0, 1 * 10, 0, 0, 0, 1 * 10])
     offset_ds.Close()
 
     ds = gdal.Open(
@@ -711,6 +712,10 @@ def test_vrtprocesseddataset_dehazing_different_resolution(tmp_vsimem):
     np.testing.assert_equal(
         ds.GetRasterBand(1).ReadAsArray(),
         np.array([[1, 2, 6, 8, 15, 15], [1, 2, 6, 8, 15, 15]]),
+    )
+    np.testing.assert_equal(
+        ds.GetRasterBand(1).GetOverview(0).ReadAsArray(),
+        np.array([[1, 6, 15]]),
     )
 
 
@@ -1181,7 +1186,7 @@ def test_vrtprocesseddataset_serialize(tmp_vsimem):
     with gdaltest.tempfile(vrt_filename, content):
         ds = gdal.Open(vrt_filename)
         np.testing.assert_equal(ds.GetRasterBand(1).ReadAsArray(), np.array([[11, 12]]))
-        assert ds.GetRasterBand(1).GetStatistics(False, False) == [0.0, 0.0, 0.0, -1.0]
+        assert ds.GetRasterBand(1).GetStatistics(False, False) is None
         ds.GetRasterBand(1).ComputeStatistics(False)
         ds.Close()
 

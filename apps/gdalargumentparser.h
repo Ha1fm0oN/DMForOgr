@@ -31,6 +31,7 @@
 #include "cpl_port.h"
 #include "cpl_conv.h"
 #include "cpl_string.h"
+#include "gdal.h"
 
 // Rename argparse namespace to a GDAL private one
 #define argparse gdal_argparse
@@ -38,7 +39,17 @@
 // Use our locale-unaware strtod()
 #define ARGPARSE_CUSTOM_STRTOD CPLStrtodM
 
+#ifdef _MSC_VER
+#pragma warning(push)
+// unreachable code
+#pragma warning(disable : 4702)
+#endif
+
 #include "argparse/argparse.hpp"
+
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 
 using namespace argparse;
 
@@ -59,6 +70,12 @@ class GDALArgumentParser : public ArgumentParser
     //! Constructor
     explicit GDALArgumentParser(const std::string &program_name,
                                 bool bForBinary);
+
+    //! Return usage message
+    std::string usage() const;
+
+    //! Adds an extra usage hint.
+    void add_extra_usage_hint(const std::string &osExtraUsageHint);
 
     //! Format an exception as an error message and display the program usage
     void display_error_and_usage(const std::exception &err);
@@ -87,6 +104,12 @@ class GDALArgumentParser : public ArgumentParser
     //! Add "-ot data_type" argument for output type, and store its value into eDT.
     Argument &add_output_type_argument(GDALDataType &eDT);
 
+    //! Add "-lco NAME=VALUE" argument for layer creation options, and store its value into var.
+    Argument &add_layer_creation_options_argument(CPLStringList &var);
+
+    //! Add "-dsco NAME=VALUE" argument for dataset creation options, and store its value into var.
+    Argument &add_dataset_creation_options_argument(CPLStringList &var);
+
     //! Parse command line arguments, without the initial program name.
     void parse_args_without_binary_name(CSLConstList papszArgs);
 
@@ -106,9 +129,35 @@ class GDALArgumentParser : public ArgumentParser
                                       bool *store_into = nullptr,
                                       const std::string &help = "");
 
+    /**
+     * Create and add a subparser to the argument parser, keeping ownership
+     * @param description   Subparser description
+     * @param bForBinary    True if the subparser is for a binary utility, false for a library
+     * @return              A pointer to the created subparser
+     */
+    GDALArgumentParser *add_subparser(const std::string &description,
+                                      bool bForBinary);
+
+    /**
+     * Get a subparser by name (case insensitive)
+     * @param name          Subparser name
+     * @return              The subparser or nullptr if not found
+     */
+    GDALArgumentParser *get_subparser(const std::string &name);
+
+    /**
+     * Return true if the argument is used in the command line (also checking subparsers, if any)
+     * @param name      Argument name
+     * @return          True if the argument is used, false if it is not used.
+     * @note            Opposite to the is_used() function this is case insensitive, also checks subparsers and never throws
+     */
+    bool is_used_globally(const std::string &name);
+
   private:
     std::map<std::string, ArgumentParser::argument_it>::iterator
     find_argument(const std::string &name);
+    std::vector<std::unique_ptr<GDALArgumentParser>> aoSubparsers;
+    std::string m_osExtraUsageHint{};
 };
 
 #endif /* GDALARGUMENTPARSER_H */

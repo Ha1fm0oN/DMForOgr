@@ -59,6 +59,7 @@
 #include "gdal_alg.h"
 #include "gdal_alg_priv.h"
 #include "gdal_thread_pool.h"
+#include "gdalresamplingkernels.h"
 #include "gdalwarpkernel_opencl.h"
 
 // #define CHECK_SUM_WITH_GEOS
@@ -513,6 +514,7 @@ static CPLErr GWKRun(GDALWarpKernel *poWK, const char *pszFuncName,
         job.pfnFunc = pfnFunc;
     }
 
+    bool bStopFlag;
     {
         std::unique_lock<std::mutex> lock(psThreadData->mutex);
 
@@ -550,6 +552,8 @@ static CPLErr GWKRun(GDALWarpKernel *poWK, const char *pszFuncName,
                 }
             }
         }
+
+        bStopFlag = psThreadData->stopFlag;
     }
 
     /* -------------------------------------------------------------------- */
@@ -557,7 +561,7 @@ static CPLErr GWKRun(GDALWarpKernel *poWK, const char *pszFuncName,
     /* -------------------------------------------------------------------- */
     psThreadData->poJobQueue->WaitCompletion();
 
-    return psThreadData->stopFlag ? CE_Failure : CE_None;
+    return bStopFlag ? CE_Failure : CE_None;
 }
 
 /************************************************************************/
@@ -3387,24 +3391,7 @@ static double GWKBilinear4Values(double *padfValues)
 
 static double GWKCubic(double dfX)
 {
-    // http://en.wikipedia.org/wiki/Bicubic_interpolation#Bicubic_convolution_algorithm
-    // W(x) formula with a = -0.5 (cubic hermite spline )
-    // or
-    // https://www.cs.utexas.edu/~fussell/courses/cs384g-fall2013/lectures/mitchell/Mitchell.pdf
-    // k(x) (formula 8) with (B,C)=(0,0.5) the Catmull-Rom spline
-    double dfAbsX = fabs(dfX);
-    if (dfAbsX <= 1.0)
-    {
-        double dfX2 = dfX * dfX;
-        return dfX2 * (1.5 * dfAbsX - 2.5) + 1;
-    }
-    else if (dfAbsX <= 2.0)
-    {
-        double dfX2 = dfX * dfX;
-        return dfX2 * (-0.5 * dfAbsX + 2.5) - 4 * dfAbsX + 2;
-    }
-    else
-        return 0.0;
+    return CubicKernel(dfX);
 }
 
 static double GWKCubic4Values(double *padfValues)
@@ -6585,6 +6572,10 @@ static void GWKAverageOrModeThread(void *pData)
         CPLAtof(CSLFetchNameValueDef(poWK->papszWarpOptions,
                                      "EXCLUDED_VALUES_PCT_THRESHOLD", "50")) /
         100.0;
+    const double dfNodataValuesThreshold =
+        CPLAtof(CSLFetchNameValueDef(poWK->papszWarpOptions,
+                                     "NODATA_VALUES_PCT_THRESHOLD", "100")) /
+        100.0;
 
     const int nXMargin =
         2 * std::max(1, static_cast<int>(std::ceil(1. / poWK->dfXScale)));
@@ -6744,7 +6735,8 @@ static void GWKAverageOrModeThread(void *pData)
             // Special Average mode where we process all bands together,
             // to avoid averaging tuples that match an entry of m_aadfExcludedValues
             if (nAlgo == GWKAOM_Average &&
-                !poWK->m_aadfExcludedValues.empty() &&
+                (!poWK->m_aadfExcludedValues.empty() ||
+                 dfNodataValuesThreshold < 1 - EPS) &&
                 !poWK->bApplyVerticalShift && !bIsComplex)
             {
                 double dfTotalWeightInvalid = 0.0;
@@ -6768,16 +6760,17 @@ static void GWKAverageOrModeThread(void *pData)
                                 (iSrcX % nSrcXSize) +
                                 static_cast<GPtrDiff_t>(iSrcY) * nSrcXSize;
 
-                        if (poWK->panUnifiedSrcValid != nullptr &&
-                            !CPLMaskGet(poWK->panUnifiedSrcValid, iSrcOffset))
-                        {
-                            continue;
-                        }
-
                         const double dfWeight =
                             COMPUTE_WEIGHT(iSrcX, dfWeightY);
                         if (dfWeight <= 0)
                             continue;
+
+                        if (poWK->panUnifiedSrcValid != nullptr &&
+                            !CPLMaskGet(poWK->panUnifiedSrcValid, iSrcOffset))
+                        {
+                            dfTotalWeightInvalid += dfWeight;
+                            continue;
+                        }
 
                         bool bAllValid = true;
                         for (int iBand = 0; iBand < poWK->nBands; iBand++)
@@ -6831,9 +6824,15 @@ static void GWKAverageOrModeThread(void *pData)
                 const double dfTotalWeight = dfTotalWeightInvalid +
                                              dfTotalWeightExcluded +
                                              dfTotalWeightRegular;
-                if (dfTotalWeightExcluded > 0 &&
-                    dfTotalWeightExcluded >=
-                        dfExcludedValuesThreshold * dfTotalWeight)
+                if (dfTotalWeightInvalid > 0 &&
+                    dfTotalWeightInvalid >=
+                        dfNodataValuesThreshold * dfTotalWeight)
+                {
+                    // Do nothing. Let bHasFoundDensity to false.
+                }
+                else if (dfTotalWeightExcluded > 0 &&
+                         dfTotalWeightExcluded >=
+                             dfExcludedValuesThreshold * dfTotalWeight)
                 {
                     // Find the most represented excluded value tuple
                     size_t iExcludedValue = 0;

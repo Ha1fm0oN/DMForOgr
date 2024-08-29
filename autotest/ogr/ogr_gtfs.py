@@ -33,7 +33,7 @@ import gdaltest
 import ogrtest
 import pytest
 
-from osgeo import ogr
+from osgeo import gdal, ogr
 
 pytestmark = pytest.mark.require_driver("GTFS")
 
@@ -56,6 +56,10 @@ def test_ogr_gtfs_open():
     assert ds.GetLayerCount() == 9
 
     ds = ogr.Open("GTFS:/vsizip/data/gtfs/gtfs_extract.zip")
+    assert ds
+    assert ds.GetLayerCount() == 9
+
+    ds = gdal.OpenEx("/vsizip/data/gtfs/gtfs_extract.zip", allowed_drivers=["GTFS"])
     assert ds
     assert ds.GetLayerCount() == 9
 
@@ -98,6 +102,11 @@ def test_ogr_gtfs_content():
     assert f["start_date"] == "2023/01/02"
     f = lyr.GetNextFeature()
     assert f is None
+
+    lyr = ds.GetLayerByName("routes")
+    assert lyr
+    lyr.SetAttributeFilter("route_type = 3")
+    assert lyr.GetFeatureCount() == 30
 
     lyr = ds.GetLayerByName("stops")
     assert lyr

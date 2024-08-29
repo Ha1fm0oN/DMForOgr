@@ -42,7 +42,7 @@ Currently the following one is supported :
 
 If several parameters are specified, they must be separated by a space.
 
-If no datset_id is provided, the driver will print list of available
+If no dataset_id is provided, the driver will print list of available
 datasets for given project.
 
 For example: **"AmigoCloud:1234 datasets"**
@@ -105,6 +105,7 @@ issuing a lot of commands due to many client/server exchanges.
 Layer creation options
 ----------------------
 
+|about-layer-creation-options|
 The following layer creation options are available:
 
 -  .. lco:: OVERWRITE
@@ -123,8 +124,8 @@ The following layer creation options are available:
 Configuration options
 ---------------------
 
-The following :ref:`configuration options <configoptions>` are
-available:
+|about-config-options|
+The following configuration options are available:
 
 -  .. config:: AMIGOCLOUD_API_URL
       :default: https://www.amigocloud.com/api/v1

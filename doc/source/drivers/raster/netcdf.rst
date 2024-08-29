@@ -222,6 +222,12 @@ should be reported as multiple bands of a same dataset.
         scale_factor=0.1
 
 
+Starting with GDAL 3.10, specifying the ``-if netCDF`` option to command line utilities
+accepting it, or ``netCDF`` as the only value of the ``papszAllowedDrivers`` of
+:cpp:func:`GDALOpenEx`, also forces the driver to recognize the passed
+filename, when it is not using subdataset syntax (it can typically be used to
+force open a HDF5 file that would be nominally recognized by the HDF5 driver).
+
 Dimension
 ---------
 
@@ -268,6 +274,7 @@ behavior.
 Open options
 ------------
 
+|about-open-options|
 The following open options are available:
 
 -  .. oo:: HONOUR_VALID_RANGE
@@ -420,6 +427,9 @@ Can be discovered for example with:
 Creation Options
 ----------------
 
+|about-creation-options|
+The following creation options are available:
+
 -  .. co:: FORMAT
       :choices: NC, NC2, NC4, NC4C
       :default: NC
@@ -472,7 +482,7 @@ Creation Options
       these variables by default. In import the CF "grid_mapping" variable
       takes precedence and the GDAL tags are used if they do not conflict
       with CF metadata. In GDAL 4, spatial_ref will not be exported. The
-      crs_wkt CF metatata attribute will be used instead.
+      crs_wkt CF metadata attribute will be used instead.
 
 -  .. co:: WRITE_LONLAT
       :choices: YES, NO, IF_NEEDED
@@ -689,6 +699,28 @@ The :cpp:func:`GDALGroup::OpenMDArray` method supports the following options:
 - USE_DEFAULT_FILL_AS_NODATA=YES/NO. (GDAL >= 3.6) Defaults to NO. If set to YES, the default
   fill value will be used as nodata when there is no _FillValue or missing_value
   attribute (except on variables of type Byte, UByte, Char)
+
+- RAW_DATA_CHUNK_CACHE_SIZE=<integer>. (GDAL >= 3.10, advanced libnetcdf parameter)
+  The total size of the libnetcdf raw data chunk cache, in bytes. Default value
+  (at least for some versions of libnetcdf) is 1 MB. Only for netCDF4/HDF5 files.
+
+- CHUNK_SLOTS=<integer>. (GDAL >= 3.10, advanced libnetcdf parameter)
+  The total size of the libnetcdf raw data chunk cache, in bytes.
+  Default value (at least for some versions of libnetcdf) is 521.
+  Only for netCDF4/HDF5 files.
+
+- PREEMPTION=<float> between 0 and 1. (GDAL >= 3.10, advanced libnetcdf parameter)
+  Indicates how much chunks from libnetcdf chunk cache that have been fully read
+  are favored for preemption.
+  A value of zero means fully read chunks are treated no differently than other
+  chunks (the preemption is strictly least-recently used) while a value of one
+  means fully read chunks are always preempted before other chunks.
+  Default value (at least for some versions of libnetcdf) is 0.75.
+  Only for netCDF4/HDF5 files.
+
+For RAW_DATA_CHUNK_CACHE_SIZE, CHUNK_SLOTS and PREEMPTION, consult
+`nc_set_var_chunk_cache <https://docs.unidata.ucar.edu/netcdf-c/current/group__variables.html#ga2788cbfc6880ec70c304292af2bc7546>`__ and
+`documentation about netCDF chunk cacke <https://docs.unidata.ucar.edu/nug/current/netcdf_perf_chunking.html>`__
 
 The :cpp:func:`GDALGroup::CreateMDArray` method supports the following options:
 

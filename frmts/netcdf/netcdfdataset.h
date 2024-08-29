@@ -144,9 +144,9 @@ static const int NCDF_DEFLATE_LEVEL = 1; /* best time/size ratio */
         if (NCDF_ERR_status_ != NC_NOERR)                                      \
         {                                                                      \
             CPLError(CE_Failure, CPLE_AppDefined,                              \
-                     "netcdf error #%d : %s .\nat (%s,%s,%d)\n", status,       \
-                     nc_strerror(NCDF_ERR_status_), __FILE__, __FUNCTION__,    \
-                     __LINE__);                                                \
+                     "netcdf error #%d : %s .\nat (%s,%s,%d)\n",               \
+                     NCDF_ERR_status_, nc_strerror(NCDF_ERR_status_),          \
+                     __FILE__, __FUNCTION__, __LINE__);                        \
         }                                                                      \
     } while (0)
 
@@ -691,7 +691,7 @@ class netCDFLayer final : public OGRLayer
 
     OGRFeature *GetNextRawFeature();
     double Get1DVarAsDouble(int nVarId, nc_type nVarType, size_t nIndex,
-                            NCDFNoDataUnion noDataVal, bool *pbIsNoData);
+                            const NCDFNoDataUnion &noDataVal, bool *pbIsNoData);
     CPLErr GetFillValue(int nVarID, char **ppszValue);
     CPLErr GetFillValue(int nVarID, double *pdfValue);
     void GetNoDataValueForFloat(int nVarId, NCDFNoDataUnion *puNoData);

@@ -1,10 +1,18 @@
+..
+   The documentation displayed on this page is automatically generated from
+   Doxygen comments using the Breathe extension. Edits to the documentation
+   can be made by making changes in the appropriate .cpp files.
+
 .. _ogrgeometry_cpp:
 
 ================================================================================
 OGRGeometry C++ API
 ================================================================================
 
-Include file: ogr_geometry.h
+Include file
+------------
+
+:file:`ogr_geometry.h`
 
 OGRGeometryFactory class
 ------------------------
@@ -24,6 +32,13 @@ OGRPoint class
 --------------
 
 .. doxygenclass:: OGRPoint
+   :project: api
+   :members:
+
+OGRSimpleCurve class
+--------------------
+
+.. doxygenclass:: OGRSimpleCurve
    :project: api
    :members:
 

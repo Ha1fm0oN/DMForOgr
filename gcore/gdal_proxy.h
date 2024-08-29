@@ -57,8 +57,8 @@ class CPL_DLL GDALProxyDataset : public GDALDataset
                            GDALProgressFunc, void *,
                            CSLConstList papszOptions) override;
     CPLErr IRasterIO(GDALRWFlag, int, int, int, int, void *, int, int,
-                     GDALDataType, int, int *, GSpacing, GSpacing, GSpacing,
-                     GDALRasterIOExtraArg *psExtraArg) override;
+                     GDALDataType, int, BANDMAP_TYPE, GSpacing, GSpacing,
+                     GSpacing, GDALRasterIOExtraArg *psExtraArg) override;
 
   public:
     char **GetMetadataDomainList() override;
@@ -128,6 +128,9 @@ class CPL_DLL GDALProxyRasterBand : public GDALRasterBand
     CPLErr IRasterIO(GDALRWFlag, int, int, int, int, void *, int, int,
                      GDALDataType, GSpacing, GSpacing,
                      GDALRasterIOExtraArg *psExtraArg) override;
+
+    int IGetDataCoverageStatus(int nXOff, int nYOff, int nXSize, int nYSize,
+                               int nMaskFlagStop, double *pdfDataPct) override;
 
   public:
     char **GetMetadataDomainList() override;
@@ -449,6 +452,8 @@ GDALProxyPoolDatasetDelete(GDALProxyPoolDatasetH hProxyPoolDataset);
 void CPL_DLL GDALProxyPoolDatasetAddSrcBandDescription(
     GDALProxyPoolDatasetH hProxyPoolDataset, GDALDataType eDataType,
     int nBlockXSize, int nBlockYSize);
+
+int CPL_DLL GDALGetMaxDatasetPoolSize(void);
 
 CPL_C_END
 

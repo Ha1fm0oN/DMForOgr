@@ -255,8 +255,7 @@ OGRSpatialReference *
 GDALGeoPackageDataset::GetSpatialRef(int iSrsId, bool bFallbackToEPSG,
                                      bool bEmitErrorIfNotFound)
 {
-    std::map<int, OGRSpatialReference *>::const_iterator oIter =
-        m_oMapSrsIdToSrs.find(iSrsId);
+    const auto oIter = m_oMapSrsIdToSrs.find(iSrsId);
     if (oIter != m_oMapSrsIdToSrs.end())
     {
         if (oIter->second == nullptr)
@@ -1133,8 +1132,8 @@ bool GDALGeoPackageDataset::ICanIWriteBlock()
 CPLErr GDALGeoPackageDataset::IRasterIO(
     GDALRWFlag eRWFlag, int nXOff, int nYOff, int nXSize, int nYSize,
     void *pData, int nBufXSize, int nBufYSize, GDALDataType eBufType,
-    int nBandCount, int *panBandMap, GSpacing nPixelSpace, GSpacing nLineSpace,
-    GSpacing nBandSpace, GDALRasterIOExtraArg *psExtraArg)
+    int nBandCount, BANDMAP_TYPE panBandMap, GSpacing nPixelSpace,
+    GSpacing nLineSpace, GSpacing nBandSpace, GDALRasterIOExtraArg *psExtraArg)
 
 {
     CPLErr eErr = OGRSQLiteBaseDataSource::IRasterIO(
@@ -1807,8 +1806,7 @@ int GDALGeoPackageDataset::Open(GDALOpenInfo *poOpenInfo,
                     pszGeomColName ? std::string(pszTableName) + " (" +
                                          pszGeomColName + ')'
                                    : std::string(pszTableName);
-                if (oExistingLayers.find(osLayerNameWithGeomColName) !=
-                    oExistingLayers.end())
+                if (cpl::contains(oExistingLayers, osLayerNameWithGeomColName))
                     continue;
                 oExistingLayers.insert(osLayerNameWithGeomColName);
                 const std::string osLayerName = bTableHasSeveralGeomColumns
@@ -5613,97 +5611,8 @@ int GDALGeoPackageDataset::Create(const char *pszFilename, int nXSize,
 
         if (bCreateTriggers)
         {
-            /* From D.5. sample_tile_pyramid Table 43. tiles table Trigger
-             * Definition SQL  */
-            pszSQL = sqlite3_mprintf(
-                "CREATE TRIGGER \"%w_zoom_insert\" "
-                "BEFORE INSERT ON \"%w\" "
-                "FOR EACH ROW BEGIN "
-                "SELECT RAISE(ABORT, 'insert on table ''%q'' violates "
-                "constraint: zoom_level not specified for table in "
-                "gpkg_tile_matrix') "
-                "WHERE NOT (NEW.zoom_level IN (SELECT zoom_level FROM "
-                "gpkg_tile_matrix WHERE lower(table_name) = lower('%q'))) ; "
-                "END; "
-                "CREATE TRIGGER \"%w_zoom_update\" "
-                "BEFORE UPDATE OF zoom_level ON \"%w\" "
-                "FOR EACH ROW BEGIN "
-                "SELECT RAISE(ABORT, 'update on table ''%q'' violates "
-                "constraint: zoom_level not specified for table in "
-                "gpkg_tile_matrix') "
-                "WHERE NOT (NEW.zoom_level IN (SELECT zoom_level FROM "
-                "gpkg_tile_matrix WHERE lower(table_name) = lower('%q'))) ; "
-                "END; "
-                "CREATE TRIGGER \"%w_tile_column_insert\" "
-                "BEFORE INSERT ON \"%w\" "
-                "FOR EACH ROW BEGIN "
-                "SELECT RAISE(ABORT, 'insert on table ''%q'' violates "
-                "constraint: tile_column cannot be < 0') "
-                "WHERE (NEW.tile_column < 0) ; "
-                "SELECT RAISE(ABORT, 'insert on table ''%q'' violates "
-                "constraint: tile_column must by < matrix_width specified for "
-                "table and zoom level in gpkg_tile_matrix') "
-                "WHERE NOT (NEW.tile_column < (SELECT matrix_width FROM "
-                "gpkg_tile_matrix WHERE lower(table_name) = lower('%q') AND "
-                "zoom_level = NEW.zoom_level)); "
-                "END; "
-                "CREATE TRIGGER \"%w_tile_column_update\" "
-                "BEFORE UPDATE OF tile_column ON \"%w\" "
-                "FOR EACH ROW BEGIN "
-                "SELECT RAISE(ABORT, 'update on table ''%q'' violates "
-                "constraint: tile_column cannot be < 0') "
-                "WHERE (NEW.tile_column < 0) ; "
-                "SELECT RAISE(ABORT, 'update on table ''%q'' violates "
-                "constraint: tile_column must by < matrix_width specified for "
-                "table and zoom level in gpkg_tile_matrix') "
-                "WHERE NOT (NEW.tile_column < (SELECT matrix_width FROM "
-                "gpkg_tile_matrix WHERE lower(table_name) = lower('%q') AND "
-                "zoom_level = NEW.zoom_level)); "
-                "END; "
-                "CREATE TRIGGER \"%w_tile_row_insert\" "
-                "BEFORE INSERT ON \"%w\" "
-                "FOR EACH ROW BEGIN "
-                "SELECT RAISE(ABORT, 'insert on table ''%q'' violates "
-                "constraint: tile_row cannot be < 0') "
-                "WHERE (NEW.tile_row < 0) ; "
-                "SELECT RAISE(ABORT, 'insert on table ''%q'' violates "
-                "constraint: tile_row must by < matrix_height specified for "
-                "table and zoom level in gpkg_tile_matrix') "
-                "WHERE NOT (NEW.tile_row < (SELECT matrix_height FROM "
-                "gpkg_tile_matrix WHERE lower(table_name) = lower('%q') AND "
-                "zoom_level = NEW.zoom_level)); "
-                "END; "
-                "CREATE TRIGGER \"%w_tile_row_update\" "
-                "BEFORE UPDATE OF tile_row ON \"%w\" "
-                "FOR EACH ROW BEGIN "
-                "SELECT RAISE(ABORT, 'update on table ''%q'' violates "
-                "constraint: tile_row cannot be < 0') "
-                "WHERE (NEW.tile_row < 0) ; "
-                "SELECT RAISE(ABORT, 'update on table ''%q'' violates "
-                "constraint: tile_row must by < matrix_height specified for "
-                "table and zoom level in gpkg_tile_matrix') "
-                "WHERE NOT (NEW.tile_row < (SELECT matrix_height FROM "
-                "gpkg_tile_matrix WHERE lower(table_name) = lower('%q') AND "
-                "zoom_level = NEW.zoom_level)); "
-                "END; ",
-                m_osRasterTable.c_str(), m_osRasterTable.c_str(),
-                m_osRasterTable.c_str(), m_osRasterTable.c_str(),
-                m_osRasterTable.c_str(), m_osRasterTable.c_str(),
-                m_osRasterTable.c_str(), m_osRasterTable.c_str(),
-                m_osRasterTable.c_str(), m_osRasterTable.c_str(),
-                m_osRasterTable.c_str(), m_osRasterTable.c_str(),
-                m_osRasterTable.c_str(), m_osRasterTable.c_str(),
-                m_osRasterTable.c_str(), m_osRasterTable.c_str(),
-                m_osRasterTable.c_str(), m_osRasterTable.c_str(),
-                m_osRasterTable.c_str(), m_osRasterTable.c_str(),
-                m_osRasterTable.c_str(), m_osRasterTable.c_str(),
-                m_osRasterTable.c_str(), m_osRasterTable.c_str(),
-                m_osRasterTable.c_str(), m_osRasterTable.c_str(),
-                m_osRasterTable.c_str(), m_osRasterTable.c_str());
-
             osSQL += ";";
-            osSQL += pszSQL;
-            sqlite3_free(pszSQL);
+            osSQL += CreateRasterTriggersSQL(m_osRasterTable);
         }
 
         OGRErr eErr = SQLCommand(hDB, osSQL);
@@ -6155,6 +6064,7 @@ GDALDataset *GDALGeoPackageDataset::CreateCopy(const char *pszFilename,
             reinterpret_cast<GDALDriver *>(GDALGetDriverByName("GPKG"));
         if (poThisDriver != nullptr)
         {
+            apszUpdatedOptions.SetNameValue("SKIP_HOLES", "YES");
             poDS = cpl::down_cast<GDALGeoPackageDataset *>(
                 poThisDriver->DefaultCreateCopy(pszFilename, poSrcDS, bStrict,
                                                 apszUpdatedOptions, pfnProgress,
@@ -7324,6 +7234,228 @@ bool GDALGeoPackageDataset::DeleteVectorOrRasterLayer(const char *pszLayerName)
     return false;
 }
 
+bool GDALGeoPackageDataset::RenameVectorOrRasterLayer(
+    const char *pszLayerName, const char *pszNewLayerName)
+{
+    int idx = FindLayerIndex(pszLayerName);
+    if (idx >= 0)
+    {
+        m_papoLayers[idx]->Rename(pszNewLayerName);
+        return true;
+    }
+
+    char *pszSQL =
+        sqlite3_mprintf("SELECT 1 FROM gpkg_contents WHERE "
+                        "lower(table_name) = lower('%q') "
+                        "AND data_type IN ('tiles', '2d-gridded-coverage')",
+                        pszLayerName);
+    const bool bIsRasterTable = SQLGetInteger(hDB, pszSQL, nullptr) == 1;
+    sqlite3_free(pszSQL);
+
+    if (bIsRasterTable)
+    {
+        return RenameRasterLayer(pszLayerName, pszNewLayerName);
+    }
+
+    return false;
+}
+
+bool GDALGeoPackageDataset::RenameRasterLayer(const char *pszLayerName,
+                                              const char *pszNewLayerName)
+{
+    std::string osSQL;
+
+    char *pszSQL = sqlite3_mprintf(
+        "SELECT 1 FROM sqlite_master WHERE lower(name) = lower('%q') "
+        "AND type IN ('table', 'view')",
+        pszNewLayerName);
+    const bool bAlreadyExists = SQLGetInteger(GetDB(), pszSQL, nullptr) == 1;
+    sqlite3_free(pszSQL);
+    if (bAlreadyExists)
+    {
+        CPLError(CE_Failure, CPLE_AppDefined, "Table %s already exists",
+                 pszNewLayerName);
+        return false;
+    }
+
+    // Temporary remove foreign key checks
+    const GPKGTemporaryForeignKeyCheckDisabler
+        oGPKGTemporaryForeignKeyCheckDisabler(this);
+
+    if (SoftStartTransaction() != OGRERR_NONE)
+    {
+        return false;
+    }
+
+    pszSQL = sqlite3_mprintf("UPDATE gpkg_contents SET table_name = '%q' WHERE "
+                             "lower(table_name) = lower('%q');",
+                             pszNewLayerName, pszLayerName);
+    osSQL = pszSQL;
+    sqlite3_free(pszSQL);
+
+    pszSQL = sqlite3_mprintf("UPDATE gpkg_contents SET identifier = '%q' WHERE "
+                             "lower(identifier) = lower('%q');",
+                             pszNewLayerName, pszLayerName);
+    osSQL += pszSQL;
+    sqlite3_free(pszSQL);
+
+    pszSQL =
+        sqlite3_mprintf("UPDATE gpkg_tile_matrix SET table_name = '%q' WHERE "
+                        "lower(table_name) = lower('%q');",
+                        pszNewLayerName, pszLayerName);
+    osSQL += pszSQL;
+    sqlite3_free(pszSQL);
+
+    pszSQL = sqlite3_mprintf(
+        "UPDATE gpkg_tile_matrix_set SET table_name = '%q' WHERE "
+        "lower(table_name) = lower('%q');",
+        pszNewLayerName, pszLayerName);
+    osSQL += pszSQL;
+    sqlite3_free(pszSQL);
+
+    if (HasGriddedCoverageAncillaryTable())
+    {
+        pszSQL = sqlite3_mprintf("UPDATE gpkg_2d_gridded_coverage_ancillary "
+                                 "SET tile_matrix_set_name = '%q' WHERE "
+                                 "lower(tile_matrix_set_name) = lower('%q');",
+                                 pszNewLayerName, pszLayerName);
+        osSQL += pszSQL;
+        sqlite3_free(pszSQL);
+
+        pszSQL = sqlite3_mprintf(
+            "UPDATE gpkg_2d_gridded_tile_ancillary SET tpudt_name = '%q' WHERE "
+            "lower(tpudt_name) = lower('%q');",
+            pszNewLayerName, pszLayerName);
+        osSQL += pszSQL;
+        sqlite3_free(pszSQL);
+    }
+
+    if (HasExtensionsTable())
+    {
+        pszSQL = sqlite3_mprintf(
+            "UPDATE gpkg_extensions SET table_name = '%q' WHERE "
+            "lower(table_name) = lower('%q');",
+            pszNewLayerName, pszLayerName);
+        osSQL += pszSQL;
+        sqlite3_free(pszSQL);
+    }
+
+    if (HasMetadataTables())
+    {
+        pszSQL = sqlite3_mprintf(
+            "UPDATE gpkg_metadata_reference SET table_name = '%q' WHERE "
+            "lower(table_name) = lower('%q');",
+            pszNewLayerName, pszLayerName);
+        osSQL += pszSQL;
+        sqlite3_free(pszSQL);
+    }
+
+    if (HasDataColumnsTable())
+    {
+        pszSQL = sqlite3_mprintf(
+            "UPDATE gpkg_data_columns SET table_name = '%q' WHERE "
+            "lower(table_name) = lower('%q');",
+            pszNewLayerName, pszLayerName);
+        osSQL += pszSQL;
+        sqlite3_free(pszSQL);
+    }
+
+    if (HasQGISLayerStyles())
+    {
+        // Update QGIS styles
+        pszSQL =
+            sqlite3_mprintf("UPDATE layer_styles SET f_table_name = '%q' WHERE "
+                            "lower(f_table_name) = lower('%q');",
+                            pszNewLayerName, pszLayerName);
+        osSQL += pszSQL;
+        sqlite3_free(pszSQL);
+    }
+
+#ifdef ENABLE_GPKG_OGR_CONTENTS
+    if (m_bHasGPKGOGRContents)
+    {
+        pszSQL = sqlite3_mprintf(
+            "UPDATE gpkg_ogr_contents SET table_name = '%q' WHERE "
+            "lower(table_name) = lower('%q');",
+            pszNewLayerName, pszLayerName);
+        osSQL += pszSQL;
+        sqlite3_free(pszSQL);
+    }
+#endif
+
+    if (HasGpkgextRelationsTable())
+    {
+        pszSQL = sqlite3_mprintf(
+            "UPDATE gpkgext_relations SET base_table_name = '%q' WHERE "
+            "lower(base_table_name) = lower('%q');",
+            pszNewLayerName, pszLayerName);
+        osSQL += pszSQL;
+        sqlite3_free(pszSQL);
+
+        pszSQL = sqlite3_mprintf(
+            "UPDATE gpkgext_relations SET related_table_name = '%q' WHERE "
+            "lower(related_table_name) = lower('%q');",
+            pszNewLayerName, pszLayerName);
+        osSQL += pszSQL;
+        sqlite3_free(pszSQL);
+
+        pszSQL = sqlite3_mprintf(
+            "UPDATE gpkgext_relations SET mapping_table_name = '%q' WHERE "
+            "lower(mapping_table_name) = lower('%q');",
+            pszNewLayerName, pszLayerName);
+        osSQL += pszSQL;
+        sqlite3_free(pszSQL);
+    }
+
+    // Drop all triggers for the layer
+    pszSQL = sqlite3_mprintf("SELECT name FROM sqlite_master WHERE type = "
+                             "'trigger' AND tbl_name = '%q'",
+                             pszLayerName);
+    auto oTriggerResult = SQLQuery(GetDB(), pszSQL);
+    sqlite3_free(pszSQL);
+    if (oTriggerResult)
+    {
+        for (int i = 0; i < oTriggerResult->RowCount(); i++)
+        {
+            const char *pszTriggerName = oTriggerResult->GetValue(0, i);
+            pszSQL = sqlite3_mprintf("DROP TRIGGER IF EXISTS \"%w\";",
+                                     pszTriggerName);
+            osSQL += pszSQL;
+            sqlite3_free(pszSQL);
+        }
+    }
+
+    pszSQL = sqlite3_mprintf("ALTER TABLE \"%w\" RENAME TO \"%w\";",
+                             pszLayerName, pszNewLayerName);
+    osSQL += pszSQL;
+    sqlite3_free(pszSQL);
+
+    // Recreate all zoom/tile triggers
+    if (oTriggerResult)
+    {
+        osSQL += CreateRasterTriggersSQL(pszNewLayerName);
+    }
+
+    OGRErr eErr = SQLCommand(GetDB(), osSQL.c_str());
+
+    // Check foreign key integrity
+    if (eErr == OGRERR_NONE)
+    {
+        eErr = PragmaCheck("foreign_key_check", "", 0);
+    }
+
+    if (eErr == OGRERR_NONE)
+    {
+        eErr = SoftCommitTransaction();
+    }
+    else
+    {
+        SoftRollbackTransaction();
+    }
+
+    return eErr == OGRERR_NONE;
+}
+
 /************************************************************************/
 /*                       TestCapability()                               */
 /************************************************************************/
@@ -7516,12 +7648,9 @@ OGRLayer *GDALGeoPackageDataset::ExecuteSQL(const char *pszSQLCommand,
         {
             const char *pszSrcTableName = papszTokens[2];
             const char *pszDstTableName = papszTokens[5];
-            OGRGeoPackageTableLayer *poSrcLayer =
-                dynamic_cast<OGRGeoPackageTableLayer *>(
-                    GetLayerByName(SQLUnescape(pszSrcTableName)));
-            if (poSrcLayer)
+            if (RenameVectorOrRasterLayer(SQLUnescape(pszSrcTableName),
+                                          SQLUnescape(pszDstTableName)))
             {
-                poSrcLayer->Rename(SQLUnescape(pszDstTableName));
                 CSLDestroy(papszTokens);
                 return nullptr;
             }
@@ -7931,6 +8060,99 @@ bool GDALGeoPackageDataset::HasGDALAspatialExtension()
     );
     bool bHasExtension = (oResultTable && oResultTable->RowCount() == 1);
     return bHasExtension;
+}
+
+std::string
+GDALGeoPackageDataset::CreateRasterTriggersSQL(const std::string &osTableName)
+{
+    char *pszSQL;
+    std::string osSQL;
+    /* From D.5. sample_tile_pyramid Table 43. tiles table Trigger
+     * Definition SQL  */
+    pszSQL = sqlite3_mprintf(
+        "CREATE TRIGGER \"%w_zoom_insert\" "
+        "BEFORE INSERT ON \"%w\" "
+        "FOR EACH ROW BEGIN "
+        "SELECT RAISE(ABORT, 'insert on table ''%q'' violates "
+        "constraint: zoom_level not specified for table in "
+        "gpkg_tile_matrix') "
+        "WHERE NOT (NEW.zoom_level IN (SELECT zoom_level FROM "
+        "gpkg_tile_matrix WHERE lower(table_name) = lower('%q'))) ; "
+        "END; "
+        "CREATE TRIGGER \"%w_zoom_update\" "
+        "BEFORE UPDATE OF zoom_level ON \"%w\" "
+        "FOR EACH ROW BEGIN "
+        "SELECT RAISE(ABORT, 'update on table ''%q'' violates "
+        "constraint: zoom_level not specified for table in "
+        "gpkg_tile_matrix') "
+        "WHERE NOT (NEW.zoom_level IN (SELECT zoom_level FROM "
+        "gpkg_tile_matrix WHERE lower(table_name) = lower('%q'))) ; "
+        "END; "
+        "CREATE TRIGGER \"%w_tile_column_insert\" "
+        "BEFORE INSERT ON \"%w\" "
+        "FOR EACH ROW BEGIN "
+        "SELECT RAISE(ABORT, 'insert on table ''%q'' violates "
+        "constraint: tile_column cannot be < 0') "
+        "WHERE (NEW.tile_column < 0) ; "
+        "SELECT RAISE(ABORT, 'insert on table ''%q'' violates "
+        "constraint: tile_column must by < matrix_width specified for "
+        "table and zoom level in gpkg_tile_matrix') "
+        "WHERE NOT (NEW.tile_column < (SELECT matrix_width FROM "
+        "gpkg_tile_matrix WHERE lower(table_name) = lower('%q') AND "
+        "zoom_level = NEW.zoom_level)); "
+        "END; "
+        "CREATE TRIGGER \"%w_tile_column_update\" "
+        "BEFORE UPDATE OF tile_column ON \"%w\" "
+        "FOR EACH ROW BEGIN "
+        "SELECT RAISE(ABORT, 'update on table ''%q'' violates "
+        "constraint: tile_column cannot be < 0') "
+        "WHERE (NEW.tile_column < 0) ; "
+        "SELECT RAISE(ABORT, 'update on table ''%q'' violates "
+        "constraint: tile_column must by < matrix_width specified for "
+        "table and zoom level in gpkg_tile_matrix') "
+        "WHERE NOT (NEW.tile_column < (SELECT matrix_width FROM "
+        "gpkg_tile_matrix WHERE lower(table_name) = lower('%q') AND "
+        "zoom_level = NEW.zoom_level)); "
+        "END; "
+        "CREATE TRIGGER \"%w_tile_row_insert\" "
+        "BEFORE INSERT ON \"%w\" "
+        "FOR EACH ROW BEGIN "
+        "SELECT RAISE(ABORT, 'insert on table ''%q'' violates "
+        "constraint: tile_row cannot be < 0') "
+        "WHERE (NEW.tile_row < 0) ; "
+        "SELECT RAISE(ABORT, 'insert on table ''%q'' violates "
+        "constraint: tile_row must by < matrix_height specified for "
+        "table and zoom level in gpkg_tile_matrix') "
+        "WHERE NOT (NEW.tile_row < (SELECT matrix_height FROM "
+        "gpkg_tile_matrix WHERE lower(table_name) = lower('%q') AND "
+        "zoom_level = NEW.zoom_level)); "
+        "END; "
+        "CREATE TRIGGER \"%w_tile_row_update\" "
+        "BEFORE UPDATE OF tile_row ON \"%w\" "
+        "FOR EACH ROW BEGIN "
+        "SELECT RAISE(ABORT, 'update on table ''%q'' violates "
+        "constraint: tile_row cannot be < 0') "
+        "WHERE (NEW.tile_row < 0) ; "
+        "SELECT RAISE(ABORT, 'update on table ''%q'' violates "
+        "constraint: tile_row must by < matrix_height specified for "
+        "table and zoom level in gpkg_tile_matrix') "
+        "WHERE NOT (NEW.tile_row < (SELECT matrix_height FROM "
+        "gpkg_tile_matrix WHERE lower(table_name) = lower('%q') AND "
+        "zoom_level = NEW.zoom_level)); "
+        "END; ",
+        osTableName.c_str(), osTableName.c_str(), osTableName.c_str(),
+        osTableName.c_str(), osTableName.c_str(), osTableName.c_str(),
+        osTableName.c_str(), osTableName.c_str(), osTableName.c_str(),
+        osTableName.c_str(), osTableName.c_str(), osTableName.c_str(),
+        osTableName.c_str(), osTableName.c_str(), osTableName.c_str(),
+        osTableName.c_str(), osTableName.c_str(), osTableName.c_str(),
+        osTableName.c_str(), osTableName.c_str(), osTableName.c_str(),
+        osTableName.c_str(), osTableName.c_str(), osTableName.c_str(),
+        osTableName.c_str(), osTableName.c_str(), osTableName.c_str(),
+        osTableName.c_str());
+    osSQL = pszSQL;
+    sqlite3_free(pszSQL);
+    return osSQL;
 }
 
 /************************************************************************/
@@ -9012,7 +9234,7 @@ static void GPKG_GDAL_HasColorTable(sqlite3_context *pContext, int /*argc*/,
 GDALDataset *
 GDALGeoPackageDataset::GetRasterLayerDataset(const char *pszLayerName)
 {
-    auto oIter = m_oCachedRasterDS.find(pszLayerName);
+    const auto oIter = m_oCachedRasterDS.find(pszLayerName);
     if (oIter != m_oCachedRasterDS.end())
         return oIter->second.get();
 
@@ -9031,17 +9253,12 @@ GDALGeoPackageDataset::GetRasterLayerDataset(const char *pszLayerName)
 /*                   GPKG_gdal_get_layer_pixel_value()                  */
 /************************************************************************/
 
-static void GPKG_gdal_get_layer_pixel_value(sqlite3_context *pContext,
-                                            CPL_UNUSED int argc,
+// NOTE: keep in sync implementations in ogrsqlitesqlfunctionscommon.cpp
+// and ogrgeopackagedatasource.cpp
+static void GPKG_gdal_get_layer_pixel_value(sqlite3_context *pContext, int argc,
                                             sqlite3_value **argv)
 {
-    if (sqlite3_value_type(argv[0]) != SQLITE_TEXT ||
-        sqlite3_value_type(argv[1]) != SQLITE_INTEGER ||
-        sqlite3_value_type(argv[2]) != SQLITE_TEXT ||
-        (sqlite3_value_type(argv[3]) != SQLITE_INTEGER &&
-         sqlite3_value_type(argv[3]) != SQLITE_FLOAT) ||
-        (sqlite3_value_type(argv[4]) != SQLITE_INTEGER &&
-         sqlite3_value_type(argv[4]) != SQLITE_FLOAT))
+    if (sqlite3_value_type(argv[0]) != SQLITE_TEXT)
     {
         CPLError(CE_Failure, CPLE_AppDefined,
                  "Invalid arguments to gdal_get_layer_pixel_value()");
@@ -9061,78 +9278,8 @@ static void GPKG_gdal_get_layer_pixel_value(sqlite3_context *pContext,
         return;
     }
 
-    const int nBand = sqlite3_value_int(argv[1]);
-    auto poBand = poDS->GetRasterBand(nBand);
-    if (!poBand)
-    {
-        sqlite3_result_null(pContext);
-        return;
-    }
-
-    const char *pszCoordType =
-        reinterpret_cast<const char *>(sqlite3_value_text(argv[2]));
-    int x, y;
-    if (EQUAL(pszCoordType, "georef"))
-    {
-        const double X = sqlite3_value_double(argv[3]);
-        const double Y = sqlite3_value_double(argv[4]);
-        double adfGeoTransform[6];
-        if (poDS->GetGeoTransform(adfGeoTransform) != CE_None)
-        {
-            sqlite3_result_null(pContext);
-            return;
-        }
-        double adfInvGT[6];
-        if (!GDALInvGeoTransform(adfGeoTransform, adfInvGT))
-        {
-            sqlite3_result_null(pContext);
-            return;
-        }
-        x = static_cast<int>(adfInvGT[0] + X * adfInvGT[1] + Y * adfInvGT[2]);
-        y = static_cast<int>(adfInvGT[3] + X * adfInvGT[4] + Y * adfInvGT[5]);
-    }
-    else if (EQUAL(pszCoordType, "pixel"))
-    {
-        x = sqlite3_value_int(argv[3]);
-        y = sqlite3_value_int(argv[4]);
-    }
-    else
-    {
-        CPLError(CE_Failure, CPLE_AppDefined,
-                 "Invalid value for 3rd argument of gdal_get_pixel_value(): "
-                 "only 'georef' or 'pixel' are supported");
-        sqlite3_result_null(pContext);
-        return;
-    }
-    if (x < 0 || x >= poDS->GetRasterXSize() || y < 0 ||
-        y >= poDS->GetRasterYSize())
-    {
-        sqlite3_result_null(pContext);
-        return;
-    }
-    const auto eDT = poBand->GetRasterDataType();
-    if (eDT != GDT_UInt64 && GDALDataTypeIsInteger(eDT))
-    {
-        int64_t nValue = 0;
-        if (poBand->RasterIO(GF_Read, x, y, 1, 1, &nValue, 1, 1, GDT_Int64, 0,
-                             0, nullptr) != CE_None)
-        {
-            sqlite3_result_null(pContext);
-            return;
-        }
-        return sqlite3_result_int64(pContext, nValue);
-    }
-    else
-    {
-        double dfValue = 0;
-        if (poBand->RasterIO(GF_Read, x, y, 1, 1, &dfValue, 1, 1, GDT_Float64,
-                             0, 0, nullptr) != CE_None)
-        {
-            sqlite3_result_null(pContext);
-            return;
-        }
-        return sqlite3_result_double(pContext, dfValue);
-    }
+    OGRSQLite_gdal_get_pixel_value_common("gdal_get_layer_pixel_value",
+                                          pContext, argc, argv, poDS);
 }
 
 /************************************************************************/
@@ -9325,6 +9472,9 @@ void GDALGeoPackageDataset::InstallSQLFunctions()
     }
 
     sqlite3_create_function(hDB, "gdal_get_layer_pixel_value", 5, SQLITE_UTF8,
+                            this, GPKG_gdal_get_layer_pixel_value, nullptr,
+                            nullptr);
+    sqlite3_create_function(hDB, "gdal_get_layer_pixel_value", 6, SQLITE_UTF8,
                             this, GPKG_gdal_get_layer_pixel_value, nullptr,
                             nullptr);
 

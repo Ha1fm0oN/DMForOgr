@@ -523,8 +523,9 @@ class CPL_DLL OGRGeometry
 
     static GEOSContextHandle_t createGEOSContext();
     static void freeGEOSContext(GEOSContextHandle_t hGEOSCtxt);
-    virtual GEOSGeom
-    exportToGEOS(GEOSContextHandle_t hGEOSCtxt) const CPL_WARN_UNUSED_RESULT;
+    GEOSGeom
+    exportToGEOS(GEOSContextHandle_t hGEOSCtxt,
+                 bool bRemoveEmptyParts = false) const CPL_WARN_UNUSED_RESULT;
     virtual OGRBoolean hasCurveGeometry(int bLookForNonLinear = FALSE) const;
     virtual OGRGeometry *getCurveGeometry(
         const char *const *papszOptions = nullptr) const CPL_WARN_UNUSED_RESULT;
@@ -543,9 +544,9 @@ class CPL_DLL OGRGeometry
     //! @endcond
     virtual void closeRings();
 
-    virtual void setCoordinateDimension(int nDimension);
-    virtual void set3D(OGRBoolean bIs3D);
-    virtual void setMeasured(OGRBoolean bIsMeasured);
+    virtual bool setCoordinateDimension(int nDimension);
+    virtual bool set3D(OGRBoolean bIs3D);
+    virtual bool setMeasured(OGRBoolean bIsMeasured);
 
     virtual void assignSpatialReference(const OGRSpatialReference *poSR);
 
@@ -557,7 +558,7 @@ class CPL_DLL OGRGeometry
     virtual OGRErr transform(OGRCoordinateTransformation *poCT) = 0;
     OGRErr transformTo(const OGRSpatialReference *poSR);
 
-    virtual void segmentize(double dfMaxLength);
+    virtual bool segmentize(double dfMaxLength);
 
     // ISpatialRelation
     virtual OGRBoolean Intersects(const OGRGeometry *) const;
@@ -580,6 +581,9 @@ class CPL_DLL OGRGeometry
     ConcaveHull(double dfRatio, bool bAllowHoles) const CPL_WARN_UNUSED_RESULT;
     virtual OGRGeometry *
     Buffer(double dfDist, int nQuadSegs = 30) const CPL_WARN_UNUSED_RESULT;
+    virtual OGRGeometry *
+    BufferEx(double dfDistance,
+             CSLConstList papszOptions) const CPL_WARN_UNUSED_RESULT;
     virtual OGRGeometry *
     Intersection(const OGRGeometry *) const CPL_WARN_UNUSED_RESULT;
     virtual OGRGeometry *
@@ -605,6 +609,9 @@ class CPL_DLL OGRGeometry
 
     OGRGeometry *SetPrecision(double dfGridSize, int nFlags) const;
 
+    virtual bool hasEmptyParts() const;
+    virtual void removeEmptyParts();
+
     //! @cond Doxygen_Suppress
     // backward compatibility to non-standard method names.
     OGRBoolean Intersect(OGRGeometry *) const
@@ -627,6 +634,8 @@ class CPL_DLL OGRGeometry
     //! @endcond
 
     virtual void swapXY();
+
+    bool IsRectangle() const;
 
     //! @cond Doxygen_Suppress
     static OGRGeometry *CastToIdentity(OGRGeometry *poGeom)
@@ -1218,7 +1227,7 @@ class CPL_DLL OGRPoint : public OGRGeometry
     }
 
     // Non standard
-    virtual void setCoordinateDimension(int nDimension) override;
+    virtual bool setCoordinateDimension(int nDimension) override;
 
     /** Set x
      * @param xIn x
@@ -1399,6 +1408,7 @@ class CPL_DLL OGRCurve : public OGRGeometry
     virtual double get_GeodesicArea(
         const OGRSpatialReference *poSRSOverride = nullptr) const = 0;
     virtual int isClockwise() const;
+    virtual void reversePoints() = 0;
 
     /** Down-cast to OGRSimpleCurve*.
      * Implies prior checking that wkbFlatten(getGeometryType()) ==
@@ -1522,10 +1532,10 @@ class CPL_DLL OGRSimpleCurve : public OGRCurve
     double *padfZ;
     double *padfM;
 
-    void Make3D();
+    bool Make3D();
     void Make2D();
     void RemoveM();
-    void AddM();
+    bool AddM();
 
     OGRErr importFromWKTListOnly(const char **ppszInput, int bHasZ, int bHasM,
                                  OGRRawPoint *&paoPointsIn, int &nMaxPoints,
@@ -1672,31 +1682,31 @@ class CPL_DLL OGRSimpleCurve : public OGRCurve
     virtual OGRBoolean Equals(const OGRGeometry *) const override;
 
     // non standard.
-    virtual void setCoordinateDimension(int nDimension) override;
-    virtual void set3D(OGRBoolean bIs3D) override;
-    virtual void setMeasured(OGRBoolean bIsMeasured) override;
-    void setNumPoints(int nNewPointCount, int bZeroizeNewContent = TRUE);
-    void setPoint(int, OGRPoint *);
-    void setPoint(int, double, double);
-    void setZ(int, double);
-    void setM(int, double);
-    void setPoint(int, double, double, double);
-    void setPointM(int, double, double, double);
-    void setPoint(int, double, double, double, double);
-    void setPoints(int, const OGRRawPoint *, const double * = nullptr);
-    void setPointsM(int, const OGRRawPoint *, const double *);
-    void setPoints(int, const OGRRawPoint *, const double *, const double *);
-    void setPoints(int, const double *padfX, const double *padfY,
+    virtual bool setCoordinateDimension(int nDimension) override;
+    virtual bool set3D(OGRBoolean bIs3D) override;
+    virtual bool setMeasured(OGRBoolean bIsMeasured) override;
+    bool setNumPoints(int nNewPointCount, int bZeroizeNewContent = TRUE);
+    bool setPoint(int, OGRPoint *);
+    bool setPoint(int, double, double);
+    bool setZ(int, double);
+    bool setM(int, double);
+    bool setPoint(int, double, double, double);
+    bool setPointM(int, double, double, double);
+    bool setPoint(int, double, double, double, double);
+    bool setPoints(int, const OGRRawPoint *, const double * = nullptr);
+    bool setPointsM(int, const OGRRawPoint *, const double *);
+    bool setPoints(int, const OGRRawPoint *, const double *, const double *);
+    bool setPoints(int, const double *padfX, const double *padfY,
                    const double *padfZIn = nullptr);
-    void setPointsM(int, const double *padfX, const double *padfY,
+    bool setPointsM(int, const double *padfX, const double *padfY,
                     const double *padfMIn = nullptr);
-    void setPoints(int, const double *padfX, const double *padfY,
+    bool setPoints(int, const double *padfX, const double *padfY,
                    const double *padfZIn, const double *padfMIn);
-    void addPoint(const OGRPoint *);
-    void addPoint(double, double);
-    void addPoint(double, double, double);
-    void addPointM(double, double, double);
-    void addPoint(double, double, double, double);
+    bool addPoint(const OGRPoint *);
+    bool addPoint(double, double);
+    bool addPoint(double, double, double);
+    bool addPointM(double, double, double);
+    bool addPoint(double, double, double, double);
 
     bool removePoint(int);
 
@@ -1707,13 +1717,13 @@ class CPL_DLL OGRSimpleCurve : public OGRCurve
 
     void addSubLineString(const OGRLineString *, int nStartVertex = 0,
                           int nEndVertex = -1);
-    void reversePoints(void);
+    void reversePoints() override;
     virtual OGRPointIterator *getPointIterator() const override;
 
     // non-standard from OGRGeometry
     virtual OGRErr transform(OGRCoordinateTransformation *poCT) override;
     virtual void flattenTo2D() override;
-    virtual void segmentize(double dfMaxLength) override;
+    virtual bool segmentize(double dfMaxLength) override;
 
     virtual void swapXY() override;
 
@@ -1892,7 +1902,12 @@ class CPL_DLL OGRLinearRing : public OGRLineString
     // Non standard.
     virtual const char *getGeometryName() const override;
     virtual OGRLinearRing *clone() const override;
-    virtual void reverseWindingOrder();
+
+    //! @cond Doxygen_Suppress
+    void reverseWindingOrder()
+        CPL_WARN_DEPRECATED("Use reversePoints() instead");
+    //! @endcond
+
     virtual void closeRings() override;
     OGRBoolean isPointInRing(const OGRPoint *pt,
                              int bTestEnvelope = TRUE) const;
@@ -2007,7 +2022,7 @@ class CPL_DLL OGRCircularString : public OGRSimpleCurve
     // Non-standard from OGRGeometry.
     virtual OGRwkbGeometryType getGeometryType() const override;
     virtual const char *getGeometryName() const override;
-    virtual void segmentize(double dfMaxLength) override;
+    virtual bool segmentize(double dfMaxLength) override;
     virtual OGRBoolean
     hasCurveGeometry(int bLookForNonLinear = FALSE) const override;
     virtual OGRGeometry *
@@ -2129,9 +2144,9 @@ class CPL_DLL OGRCurveCollection
     OGRErr exportToWkb(const OGRGeometry *poGeom, unsigned char *,
                        const OGRwkbExportOptions * = nullptr) const;
     OGRBoolean Equals(const OGRCurveCollection *poOCC) const;
-    void setCoordinateDimension(OGRGeometry *poGeom, int nNewDimension);
-    void set3D(OGRGeometry *poGeom, OGRBoolean bIs3D);
-    void setMeasured(OGRGeometry *poGeom, OGRBoolean bIsMeasured);
+    bool setCoordinateDimension(OGRGeometry *poGeom, int nNewDimension);
+    bool set3D(OGRGeometry *poGeom, OGRBoolean bIs3D);
+    bool setMeasured(OGRGeometry *poGeom, OGRBoolean bIsMeasured);
     void assignSpatialReference(OGRGeometry *poGeom,
                                 const OGRSpatialReference *poSR);
     int getNumCurves() const;
@@ -2141,9 +2156,14 @@ class CPL_DLL OGRCurveCollection
 
     OGRErr removeCurve(int iIndex, bool bDelete = true);
 
+    bool hasEmptyParts() const;
+    void removeEmptyParts();
+
+    void reversePoints();
+
     OGRErr transform(OGRGeometry *poGeom, OGRCoordinateTransformation *poCT);
     void flattenTo2D(OGRGeometry *poGeom);
-    void segmentize(double dfMaxLength);
+    bool segmentize(double dfMaxLength);
     void swapXY();
     OGRBoolean hasCurveGeometry(int bLookForNonLinear) const;
 };
@@ -2285,9 +2305,9 @@ class CPL_DLL OGRCompoundCurve : public OGRCurve
     const OGRCurve *getCurve(int) const;
 
     // Non-standard.
-    virtual void setCoordinateDimension(int nDimension) override;
-    virtual void set3D(OGRBoolean bIs3D) override;
-    virtual void setMeasured(OGRBoolean bIsMeasured) override;
+    virtual bool setCoordinateDimension(int nDimension) override;
+    virtual bool set3D(OGRBoolean bIs3D) override;
+    virtual bool setMeasured(OGRBoolean bIsMeasured) override;
 
     virtual void
     assignSpatialReference(const OGRSpatialReference *poSR) override;
@@ -2305,13 +2325,14 @@ class CPL_DLL OGRCompoundCurve : public OGRCurve
                     double dfToleranceEps = DEFAULT_TOLERANCE_EPSILON);
     OGRCurve *stealCurve(int);
     virtual OGRPointIterator *getPointIterator() const override;
+    void reversePoints() override;
 
     // Non-standard from OGRGeometry.
     virtual OGRwkbGeometryType getGeometryType() const override;
     virtual const char *getGeometryName() const override;
     virtual OGRErr transform(OGRCoordinateTransformation *poCT) override;
     virtual void flattenTo2D() override;
-    virtual void segmentize(double dfMaxLength) override;
+    virtual bool segmentize(double dfMaxLength) override;
     virtual OGRBoolean
     hasCurveGeometry(int bLookForNonLinear = FALSE) const override;
     virtual OGRGeometry *
@@ -2329,6 +2350,9 @@ class CPL_DLL OGRCompoundCurve : public OGRCurve
     }
 
     virtual void swapXY() override;
+
+    bool hasEmptyParts() const override;
+    void removeEmptyParts() override;
 
     OGR_ALLOW_UPCAST_TO(Curve)
     OGR_ALLOW_CAST_TO_THIS(CompoundCurve)
@@ -2494,7 +2518,7 @@ class CPL_DLL OGRCurvePolygon : public OGRSurface
     virtual OGRErr transform(OGRCoordinateTransformation *poCT) override;
     virtual void flattenTo2D() override;
     virtual OGRBoolean IsEmpty() const override;
-    virtual void segmentize(double dfMaxLength) override;
+    virtual bool segmentize(double dfMaxLength) override;
     virtual OGRBoolean
     hasCurveGeometry(int bLookForNonLinear = FALSE) const override;
     virtual OGRGeometry *
@@ -2546,14 +2570,14 @@ class CPL_DLL OGRCurvePolygon : public OGRSurface
     virtual OGRBoolean Contains(const OGRGeometry *) const override;
 
     // Non standard
-    virtual void setCoordinateDimension(int nDimension) override;
-    virtual void set3D(OGRBoolean bIs3D) override;
-    virtual void setMeasured(OGRBoolean bIsMeasured) override;
+    virtual bool setCoordinateDimension(int nDimension) override;
+    virtual bool set3D(OGRBoolean bIs3D) override;
+    virtual bool setMeasured(OGRBoolean bIsMeasured) override;
 
     virtual void
     assignSpatialReference(const OGRSpatialReference *poSR) override;
 
-    virtual OGRErr addRing(OGRCurve *);
+    virtual OGRErr addRing(const OGRCurve *);
     virtual OGRErr addRingDirectly(OGRCurve *);
     OGRErr addRing(std::unique_ptr<OGRCurve>);
 
@@ -2578,6 +2602,9 @@ class CPL_DLL OGRCurvePolygon : public OGRSurface
     }
 
     virtual void swapXY() override;
+
+    bool hasEmptyParts() const override;
+    void removeEmptyParts() override;
 
     OGR_ALLOW_UPCAST_TO(Surface)
     OGR_ALLOW_CAST_TO_THIS(CurvePolygon)
@@ -2944,7 +2971,7 @@ class CPL_DLL OGRGeometryCollection : public OGRGeometry
     virtual OGRErr transform(OGRCoordinateTransformation *poCT) override;
     virtual void flattenTo2D() override;
     virtual OGRBoolean IsEmpty() const override;
-    virtual void segmentize(double dfMaxLength) override;
+    virtual bool segmentize(double dfMaxLength) override;
     virtual OGRBoolean
     hasCurveGeometry(int bLookForNonLinear = FALSE) const override;
     virtual OGRGeometry *
@@ -2996,13 +3023,16 @@ class CPL_DLL OGRGeometryCollection : public OGRGeometry
     virtual OGRBoolean Equals(const OGRGeometry *) const override;
 
     // Non standard
-    virtual void setCoordinateDimension(int nDimension) override;
-    virtual void set3D(OGRBoolean bIs3D) override;
-    virtual void setMeasured(OGRBoolean bIsMeasured) override;
+    virtual bool setCoordinateDimension(int nDimension) override;
+    virtual bool set3D(OGRBoolean bIs3D) override;
+    virtual bool setMeasured(OGRBoolean bIsMeasured) override;
     virtual OGRErr addGeometry(const OGRGeometry *);
     virtual OGRErr addGeometryDirectly(OGRGeometry *);
     OGRErr addGeometry(std::unique_ptr<OGRGeometry> geom);
     virtual OGRErr removeGeometry(int iIndex, int bDelete = TRUE);
+
+    bool hasEmptyParts() const override;
+    void removeEmptyParts() override;
 
     virtual void
     assignSpatialReference(const OGRSpatialReference *poSR) override;
@@ -3495,11 +3525,14 @@ class CPL_DLL OGRPolyhedralSurface : public OGRSurface
     const OGRPolygon *getGeometryRef(int i) const;
 
     virtual OGRBoolean IsEmpty() const override;
-    virtual void setCoordinateDimension(int nDimension) override;
-    virtual void set3D(OGRBoolean bIs3D) override;
-    virtual void setMeasured(OGRBoolean bIsMeasured) override;
+    virtual bool setCoordinateDimension(int nDimension) override;
+    virtual bool set3D(OGRBoolean bIs3D) override;
+    virtual bool setMeasured(OGRBoolean bIsMeasured) override;
     virtual void swapXY() override;
     OGRErr removeGeometry(int iIndex, int bDelete = TRUE);
+
+    bool hasEmptyParts() const override;
+    void removeEmptyParts() override;
 
     virtual void accept(IOGRGeometryVisitor *visitor) override
     {

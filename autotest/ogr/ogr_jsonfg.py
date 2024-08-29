@@ -296,6 +296,15 @@ def test_jsonfg_read_coordRefSys_invalid(coordRefSys):
         ),
         ("data/jsonfg/crs_4326_feat_only.json", 4326, [2, 1], 2, 49, None, None),
         ("data/jsonfg/crs_none.json", 4326, [2, 1], 2, 49, None, None),
+        (
+            "data/jsonfg/crs_none_fc_mixed_feat_no_conformsTo.json",
+            4326,
+            [2, 1],
+            2,
+            49,
+            None,
+            None,
+        ),
     ],
 )
 def test_jsonfg_read_crs(
@@ -462,6 +471,32 @@ def test_jsonfg_read_two_features_types():
     f = lyr.GetNextFeature()
     assert f.GetField("bar") == "baz"
     assert f.GetFID() == 1
+
+
+###############################################################################
+# Test reading file with a single Feature larger than 6000 bytes
+
+
+def test_jsonfg_read_single_feature_large(tmp_vsimem):
+
+    tmp_file = str(tmp_vsimem / "test.json")
+    content = """{
+      "type": "Feature",
+      "conformsTo" : [ "[ogc-json-fg-1-0.1:core]" ],
+      %s
+      "id": 1,
+      "geometry": { "type": "Point", "coordinates": [2, 49] },
+      "properties": { "foo": 1 },
+      "place": null,
+      "time": null
+    }""" % (
+        " " * 100000
+    )
+
+    gdal.FileFromMemBuffer(tmp_file, content)
+
+    ds = gdal.OpenEx(tmp_file)
+    assert ds.GetDriver().GetDescription() == "JSONFG"
 
 
 ###############################################################################
@@ -1283,3 +1318,27 @@ def test_ogr_jsonfg_geom_coord_precision(tmp_vsimem, single_layer):
     prec = geom_fld.GetCoordinatePrecision()
     assert prec.GetXYResolution() == 1e-2
     assert prec.GetZResolution() == 1e-3
+
+
+###############################################################################
+# Test force opening a GeoJSON file with JSONFG
+
+
+def test_ogr_jsonfg_force_opening():
+
+    if ogr.GetDriverByName("GeoJSON"):
+        ds = gdal.OpenEx("data/geojson/featuretype.json")
+        assert ds.GetDriver().GetDescription() == "GeoJSON"
+
+    ds = gdal.OpenEx("data/geojson/featuretype.json", allowed_drivers=["JSONFG"])
+    assert ds.GetDriver().GetDescription() == "JSONFG"
+
+
+###############################################################################
+# Test force opening a URL as JSONFG
+
+
+def test_ogr_jsonfg_force_opening_url():
+
+    drv = gdal.IdentifyDriverEx("http://example.com", allowed_drivers=["JSONFG"])
+    assert drv.GetDescription() == "JSONFG"

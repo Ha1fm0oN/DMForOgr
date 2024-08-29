@@ -747,14 +747,12 @@ def test_tiff_12bitjpeg():
 # Test that statistics for TIFF files are stored and correctly read from .aux.xml
 
 
-def test_tiff_read_stats_from_pam():
+def test_tiff_read_stats_from_pam(tmp_path):
 
-    try:
-        os.remove("data/byte.tif.aux.xml")
-    except OSError:
-        pass
+    tmp_tif = str(tmp_path / "byte.tif")
+    shutil.copy("data/byte.tif", tmp_tif)
 
-    ds = gdal.Open("data/byte.tif")
+    ds = gdal.Open(tmp_tif)
     md = ds.GetRasterBand(1).GetMetadata()
     assert "STATISTICS_MINIMUM" not in md, "Unexpected presence of STATISTICS_MINIMUM"
 
@@ -763,21 +761,13 @@ def test_tiff_read_stats_from_pam():
     assert stats[0] == 74.0 and stats[1] == 255.0
 
     ds = None
-    try:
-        os.stat("data/byte.tif.aux.xml")
-    except OSError:
-        pytest.fail("Expected generation of data/byte.tif.aux.xml")
+    assert os.path.exists(tmp_tif + ".aux.xml")
 
-    ds = gdal.Open("data/byte.tif")
+    ds = gdal.Open(tmp_tif)
     # Just read statistics (from PAM) without forcing their computation
     stats = ds.GetRasterBand(1).GetStatistics(0, 0)
     assert stats[0] == 74.0 and stats[1] == 255.0
     ds = None
-
-    try:
-        os.remove("data/byte.tif.aux.xml")
-    except OSError:
-        pass
 
 
 ###############################################################################
@@ -5230,3 +5220,98 @@ def test_tiff_read_jpeg_cached_multi_range_issue_9563(tmp_vsimem):
     out = str(tmp_vsimem / "out.tif")
     with gdal.config_option("GTIFF_HAS_OPTIMIZED_READ_MULTI_RANGE", "YES"):
         gdal.Translate(out, vrt, options="-tr 0.000071806 0.000071806 -f COG")
+
+
+###############################################################################
+# Test reading a raster with missing ExtraSamples tag in a multithreaded way
+
+
+def test_tiff_read_missing_extrasamples_multi_threaded():
+
+    with gdal.quiet_errors():
+        ds = gdal.Open("data/gtiff/missing_extrasamples.tif")
+    gdal.ErrorReset()
+    with gdal.config_option("GDAL_NUM_THREADS", "2"):
+        ds.ReadRaster()
+    assert gdal.GetLastErrorMsg() == ""
+
+
+###############################################################################
+# Test that we honor GDAL_DISABLE_READDIR_ON_OPEN when working on a dataset opened with OVERVIEW_LEVEL open option
+
+
+@pytest.mark.require_curl()
+def test_tiff_read_overview_level_open_option_honor_GDAL_DISABLE_READDIR_ON_OPEN_EMPTY_DIR(
+    tmp_path,
+):
+
+    webserver_process = None
+    webserver_port = 0
+
+    (webserver_process, webserver_port) = webserver.launch(
+        handler=webserver.DispatcherHttpHandler
+    )
+    if webserver_port == 0:
+        pytest.skip()
+
+    gdal.VSICurlClearCache()
+
+    try:
+        tmp_filename = str(tmp_path / "test.tif")
+        ds = gdal.Translate(tmp_filename, "data/byte.tif")
+        ds.BuildOverviews("NEAR", [2])
+        ds.Close()
+
+        filesize = gdal.VSIStatL(tmp_filename).size
+        handler = webserver.SequentialHandler()
+        handler.add("HEAD", "/test.tif", 200, {"Content-Length": "%d" % filesize})
+
+        def method(request):
+            # sys.stderr.write('%s\n' % str(request.headers))
+
+            if request.headers["Range"].startswith("bytes="):
+                rng = request.headers["Range"][len("bytes=") :]
+                assert len(rng.split("-")) == 2
+                start = int(rng.split("-")[0])
+                end = int(rng.split("-")[1])
+
+                request.protocol_version = "HTTP/1.1"
+                request.send_response(206)
+                request.send_header("Content-type", "application/octet-stream")
+                request.send_header(
+                    "Content-Range", "bytes %d-%d/%d" % (start, end, filesize)
+                )
+                request.send_header("Content-Length", end - start + 1)
+                request.send_header("Connection", "close")
+                request.end_headers()
+                with open(tmp_filename, "rb") as f:
+                    f.seek(start, 0)
+                    request.wfile.write(f.read(end - start + 1))
+
+        for i in range(2):
+            handler.add("GET", "/test.tif", custom_method=method)
+
+        with gdaltest.config_options(
+            {
+                "GDAL_DISABLE_READDIR_ON_OPEN": "EMPTY_DIR",
+            }
+        ):
+            with webserver.install_http_handler(handler):
+                ds = gdal.OpenEx(
+                    "/vsicurl/http://127.0.0.1:%d/test.tif" % webserver_port,
+                    open_options=["OVERVIEW_LEVEL=0"],
+                )
+
+                msgs = []
+
+                def error_handler(type, code, msg):
+                    msgs.append(msg)
+
+                with gdaltest.error_handler(error_handler):
+                    gdal.Translate("", ds, format="MEM")
+                assert len(msgs) == 0
+
+    finally:
+        webserver.server_stop(webserver_process, webserver_port)
+
+        gdal.VSICurlClearCache()

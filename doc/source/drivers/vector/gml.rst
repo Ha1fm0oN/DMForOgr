@@ -35,8 +35,8 @@ Driver capabilities
 Configuration options
 ---------------------
 
-The following :ref:`configuration options <configoptions>` are
-available:
+|about-config-options|
+The following configuration options are available:
 
 - .. config:: GML_PARSER
      :choices: EXPAT, XERCES
@@ -114,6 +114,11 @@ available:
      :choices: AUTO, STANDARD, SEQUENTIAL_LAYERS, INTERLEAVED_LAYERS
 
      Equivalent of :oo:`READ_MODE`. See :ref:`gml_performance`.
+
+- .. config:: GML_USE_SCHEMA_IMPORT
+     :choices: YES, NO
+
+     Equivalent of :oo:`USE_SCHEMA_IMPORT`.
 
 
 Parsers
@@ -501,6 +506,9 @@ with code similar to the following one :
 Open options
 ------------
 
+|about-open-options|
+The following open options are supported:
+
 -  .. oo:: XSD
       :choices: <filename>
 
@@ -623,6 +631,20 @@ Open options
       Whether to use gml:boundedBy at feature level as feature geometry,
       if there are no other geometry.
 
+-  .. oo:: USE_SCHEMA_IMPORT
+      :choices: YES, NO
+      :default: NO
+
+      Whether to use schema imports in XSD files so that
+      the feature types corresponding to imported schema can be detected.
+
+.. note::
+
+  When changing the value of most of the above options, it is recommended to
+  delete the ``.gfs`` file if it pre-exists, otherwise mis-behavior might be
+  observed.
+
+
 Creation Issues
 ---------------
 
@@ -633,6 +655,9 @@ ogr:geometryProperty element on the feature.
 
 Dataset creation options
 ------------------------
+
+|about-dataset-creation-options|
+The following dataset creation options are supported:
 
 -  .. dsco:: XSISCHEMAURI
 

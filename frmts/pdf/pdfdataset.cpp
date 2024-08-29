@@ -1559,18 +1559,18 @@ class GDALPDFiumRenderDeviceDriver : public RenderDeviceDriverIface
                                             blend_typeL);
     }
 
-    virtual bool GetClipBox(FX_RECT *pRect) override
+    virtual FX_RECT GetClipBox() const override
     {
-        return m_poParent->GetClipBox(pRect);
+        return m_poParent->GetClipBox();
     }
 
-    virtual bool GetDIBits(const RetainPtr<CFX_DIBitmap> &pBitmap, int left,
-                           int top) override
+    virtual bool GetDIBits(RetainPtr<CFX_DIBitmap> bitmap, int left,
+                           int top) const override
     {
-        return m_poParent->GetDIBits(pBitmap, left, top);
+        return m_poParent->GetDIBits(bitmap, left, top);
     }
 
-    virtual RetainPtr<CFX_DIBitmap> GetBackDrop() override
+    virtual RetainPtr<const CFX_DIBitmap> GetBackDrop() const override
     {
         return m_poParent->GetBackDrop();
     }
@@ -1599,19 +1599,19 @@ class GDALPDFiumRenderDeviceDriver : public RenderDeviceDriverIface
                                          pClipRect, options, blend_type);
     }
 
-    virtual bool StartDIBits(RetainPtr<const CFX_DIBBase> bitmap, float alpha,
-                             uint32_t color, const CFX_Matrix &matrix,
-                             const FXDIB_ResampleOptions &options,
-                             std::unique_ptr<CFX_ImageRenderer> *handle,
-                             BlendMode blend_type) override
+    virtual StartResult StartDIBits(RetainPtr<const CFX_DIBBase> bitmap,
+                                    float alpha, uint32_t color,
+                                    const CFX_Matrix &matrix,
+                                    const FXDIB_ResampleOptions &options,
+                                    BlendMode blend_type) override
     {
         if (!bEnableBitmap && !bTemporaryEnableVectorForTextStroking)
-            return true;
+            return StartResult(Result::kSuccess, nullptr);
         return m_poParent->StartDIBits(std::move(bitmap), alpha, color, matrix,
-                                       options, handle, blend_type);
+                                       options, blend_type);
     }
 
-    virtual bool ContinueDIBits(CFX_ImageRenderer *handle,
+    virtual bool ContinueDIBits(CFX_AggImageRenderer *handle,
                                 PauseIndicatorIface *pPause) override
     {
         return m_poParent->ContinueDIBits(handle, pPause);
@@ -1646,16 +1646,16 @@ class GDALPDFiumRenderDeviceDriver : public RenderDeviceDriverIface
         return m_poParent->GetDriverType();
     }
 
-    virtual bool DrawShading(const CPDF_ShadingPattern *pPattern,
-                             const CFX_Matrix *pMatrix,
-                             const FX_RECT &clip_rect, int alpha,
-                             bool bAlphaMode) override
+#if defined(_SKIA_SUPPORT_)
+    virtual bool DrawShading(const CPDF_ShadingPattern &pattern,
+                             const CFX_Matrix &matrix, const FX_RECT &clip_rect,
+                             int alpha) override
     {
         if (!bEnableBitmap && !bTemporaryEnableVectorForTextStroking)
             return true;
-        return m_poParent->DrawShading(pPattern, pMatrix, clip_rect, alpha,
-                                       bAlphaMode);
+        return m_poParent->DrawShading(pattern, matrix, clip_rect, alpha);
     }
+#endif
 
     bool MultiplyAlpha(float alpha) override
     {
@@ -1696,10 +1696,10 @@ class GDALPDFiumRenderDeviceDriver : public RenderDeviceDriverIface
 /*                         PDFiumRenderPageBitmap()                     */
 /************************************************************************/
 
-/* This method is a customization of FPDF_RenderPageBitmap()
-   from pdfium/fpdfsdk/fpdf_view.cpp to allow selection of which OGC/layer are
+/* This method is a customization of RenderPageImpl()
+   from pdfium/fpdfsdk/cpdfsdk_renderpage.cpp to allow selection of which OGC/layer are
    active. Thus it inherits the following license */
-// Copyright 2014 PDFium Authors. All rights reserved.
+// Copyright 2014-2020 PDFium Authors. All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are
@@ -1781,8 +1781,7 @@ static void myRenderPageImpl(PDFDataset *poDS, CPDF_PageRenderContext *pContext,
 
         // TODO(https://crbug.com/pdfium/993) - maybe pass true here.
         const bool bShowWidget = false;
-        pList->DisplayAnnots(pPage, pContext->m_pDevice.get(),
-                             pContext->m_pContext.get(), bPrinting, matrix,
+        pList->DisplayAnnots(pContext->m_pContext.get(), bPrinting, matrix,
                              bShowWidget);
     }
 
@@ -2480,7 +2479,7 @@ GDALPDFObject *PDFDataset::GetCatalog()
         return m_poCatalogObject;
 
 #ifdef HAVE_POPPLER
-    if (m_bUseLib.test(PDFLIB_POPPLER))
+    if (m_bUseLib.test(PDFLIB_POPPLER) && m_poDocPoppler)
     {
         m_poCatalogObjectPoppler =
             std::make_unique<Object>(m_poDocPoppler->getXRef()->getCatalog());
@@ -2491,7 +2490,7 @@ GDALPDFObject *PDFDataset::GetCatalog()
 #endif
 
 #ifdef HAVE_PODOFO
-    if (m_bUseLib.test(PDFLIB_PODOFO))
+    if (m_bUseLib.test(PDFLIB_PODOFO) && m_poDocPodofo)
     {
         int nCatalogNum = 0;
         int nCatalogGen = 0;
@@ -2517,7 +2516,7 @@ GDALPDFObject *PDFDataset::GetCatalog()
 #endif
 
 #ifdef HAVE_PDFIUM
-    if (m_bUseLib.test(PDFLIB_PDFIUM))
+    if (m_bUseLib.test(PDFLIB_PDFIUM) && m_poDocPdfium)
     {
         const CPDF_Dictionary *catalog = m_poDocPdfium->doc->GetRoot();
         if (catalog)
@@ -2656,9 +2655,7 @@ PDFDataset::~PDFDataset()
 
     CleanupIntermediateResources();
 
-    for (int i = 0; i < m_nLayers; i++)
-        delete m_papoLayers[i];
-    CPLFree(m_papoLayers);
+    m_apoLayers.clear();
 
     // Do that only after having destroyed Poppler objects
     m_fp.reset();
@@ -2671,7 +2668,7 @@ PDFDataset::~PDFDataset()
 CPLErr PDFDataset::IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff,
                              int nXSize, int nYSize, void *pData, int nBufXSize,
                              int nBufYSize, GDALDataType eBufType,
-                             int nBandCount, int *panBandMap,
+                             int nBandCount, BANDMAP_TYPE panBandMap,
                              GSpacing nPixelSpace, GSpacing nLineSpace,
                              GSpacing nBandSpace,
                              GDALRasterIOExtraArg *psExtraArg)
@@ -4959,11 +4956,11 @@ PDFDataset *PDFDataset::Open(GDALOpenInfo *poOpenInfo)
             return nullptr;
         }
         poPageObj = GDALPDFObjectPdfium::Build(pageObj);
-        if (poPageObj == nullptr)
-            return nullptr;
     }
 #endif  // ~ HAVE_PDFIUM
 
+    if (poPageObj == nullptr)
+        return nullptr;
     GDALPDFDictionary *poPageDict = poPageObj->GetDictionary();
     if (poPageDict == nullptr)
     {
@@ -5034,7 +5031,9 @@ PDFDataset *PDFDataset::Open(GDALOpenInfo *poOpenInfo)
     if (pszDumpCatalog != nullptr)
     {
         GDALPDFDumper oDumper(pszFilename, pszDumpCatalog);
-        oDumper.Dump(poDS->GetCatalog());
+        auto poCatalog = poDS->GetCatalog();
+        if (poCatalog)
+            oDumper.Dump(poCatalog);
     }
 
     int nBandsGuessed = 0;
@@ -5092,6 +5091,7 @@ PDFDataset *PDFDataset::Open(GDALOpenInfo *poOpenInfo)
 #ifdef HAVE_PDFIUM
     if (bUseLib.test(PDFLIB_PDFIUM))
     {
+        CPLAssert(poPagePdfium);
         CFX_FloatRect rect = poPagePdfium->page->GetBBox();
         dfX1 = rect.left;
         dfX2 = rect.right;
@@ -5136,6 +5136,7 @@ PDFDataset *PDFDataset::Open(GDALOpenInfo *poOpenInfo)
 #ifdef HAVE_PDFIUM
     if (bUseLib.test(PDFLIB_PDFIUM))
     {
+        CPLAssert(poPagePdfium);
         dfRotation = poPagePdfium->page->GetPageRotation() * 90;
     }
 #endif

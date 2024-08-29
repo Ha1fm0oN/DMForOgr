@@ -770,7 +770,7 @@ GUInt64 GDALGroup::GetTotalCopyCost() const
  * @param poSrcDS    Source dataset. Might be nullptr (but for correct behavior
  *                   of some output drivers this is not recommended)
  * @param poSrcGroup Source group. Must NOT be nullptr.
- * @param bStrict Whether to enable stict mode. In strict mode, any error will
+ * @param bStrict Whether to enable strict mode. In strict mode, any error will
  *                stop the copy. In relaxed mode, the copy will be attempted to
  *                be pursued.
  * @param nCurCost  Should be provided as a variable initially set to 0.
@@ -892,8 +892,8 @@ bool GDALGroup::CopyFrom(const std::shared_ptr<GDALGroup> &poDstRootGroup,
                                                          '_' + dim->GetName());
                             newDimName = newDimNamePrefix;
                             int nIterCount = 2;
-                            while (mapExistingDstDims.find(newDimName) !=
-                                   mapExistingDstDims.end())
+                            while (
+                                cpl::contains(mapExistingDstDims, newDimName))
                             {
                                 newDimName = newDimNamePrefix +
                                              CPLSPrintf("_%d", nIterCount);
@@ -1148,9 +1148,8 @@ bool GDALGroup::CopyFrom(const std::shared_ptr<GDALGroup> &poDstRootGroup,
             auto srcArray = poSrcGroup->OpenMDArray(name);
             EXIT_OR_CONTINUE_IF_NULL(srcArray);
 
-            const auto oIterDimName =
-                mapSrcVariableNameToIndexedDimName.find(srcArray->GetName());
-            if (oIterDimName != mapSrcVariableNameToIndexedDimName.end())
+            if (cpl::contains(mapSrcVariableNameToIndexedDimName,
+                              srcArray->GetName()))
             {
                 if (!CopyArray(srcArray))
                     return false;
@@ -1163,9 +1162,8 @@ bool GDALGroup::CopyFrom(const std::shared_ptr<GDALGroup> &poDstRootGroup,
             auto srcArray = poSrcGroup->OpenMDArray(name);
             EXIT_OR_CONTINUE_IF_NULL(srcArray);
 
-            const auto oIterDimName =
-                mapSrcVariableNameToIndexedDimName.find(srcArray->GetName());
-            if (oIterDimName == mapSrcVariableNameToIndexedDimName.end())
+            if (!cpl::contains(mapSrcVariableNameToIndexedDimName,
+                               srcArray->GetName()))
             {
                 if (!CopyArray(srcArray))
                     return false;
@@ -1308,8 +1306,8 @@ GDALGroup::ResolveMDArray(const std::string &osName,
                 GetInnerMostGroup(osPath, curGroupHolder, osLastPart);
             if (poGroupPtr)
                 poGroup = poGroupPtr->OpenGroup(osLastPart);
-            if (poGroup && oSetAlreadyVisited.find(poGroup->GetFullName()) ==
-                               oSetAlreadyVisited.end())
+            if (poGroup &&
+                !cpl::contains(oSetAlreadyVisited, poGroup->GetFullName()))
             {
                 oQueue.push(poGroup);
                 goOn = true;
@@ -1340,9 +1338,8 @@ GDALGroup::ResolveMDArray(const std::string &osName,
                 for (const auto &osGroupName : aosGroupNames)
                 {
                     auto poSubGroup = groupPtr->OpenGroup(osGroupName);
-                    if (poSubGroup &&
-                        oSetAlreadyVisited.find(poSubGroup->GetFullName()) ==
-                            oSetAlreadyVisited.end())
+                    if (poSubGroup && !cpl::contains(oSetAlreadyVisited,
+                                                     poSubGroup->GetFullName()))
                     {
                         oQueue.push(poSubGroup);
                         oSetAlreadyVisited.insert(poSubGroup->GetFullName());
@@ -1782,7 +1779,7 @@ bool GDALExtendedDataType::CopyValue(const void *pSrc,
                     pabyDst + dstComp->GetOffset(), dstComp->GetType()))
             {
                 return false;
-            };
+            }
         }
         return true;
     }
@@ -1853,7 +1850,7 @@ bool GDALAbstractMDArray::CheckReadWriteParams(
         CPLError(CE_Failure, CPLE_AppDefined,
                  "Not all elements pointed by buffer will fit in "
                  "[buffer_alloc_start, "
-                 "buffer_alloc_start + buffer_alloc_size[");
+                 "buffer_alloc_start + buffer_alloc_size]");
     };
 
     const auto &dims = GetDimensions();
@@ -2123,7 +2120,7 @@ bool GDALAbstractMDArray::CheckReadWriteParams(
  * count[] and with the spacing of bufferStride[].
  *
  * @param pDstBufferAllocStart Optional pointer that can be used to validate the
- *                             validty of pDstBuffer. pDstBufferAllocStart
+ *                             validity of pDstBuffer. pDstBufferAllocStart
  * should be the pointer returned by the malloc() or equivalent call used to
  * allocate the buffer. It will generally be equal to pDstBuffer (when
  * bufferStride[] values are all positive), but not necessarily. If specified,
@@ -2131,7 +2128,7 @@ bool GDALAbstractMDArray::CheckReadWriteParams(
  * validation is needed, nullptr can be passed.
  *
  * @param nDstBufferAllocSize  Optional buffer size, that can be used to
- * validate the validty of pDstBuffer. This is the size of the buffer starting
+ * validate the validity of pDstBuffer. This is the size of the buffer starting
  * at pDstBufferAllocStart. If specified, pDstBufferAllocStart should be also
  *                             set to the appropriate value.
  *                             If no validation is needed, 0 can be passed.
@@ -2227,7 +2224,7 @@ bool GDALAbstractMDArray::IWrite(const GUInt64 *, const size_t *,
  * count[] and with the spacing of bufferStride[].
  *
  * @param pSrcBufferAllocStart Optional pointer that can be used to validate the
- *                             validty of pSrcBuffer. pSrcBufferAllocStart
+ *                             validity of pSrcBuffer. pSrcBufferAllocStart
  * should be the pointer returned by the malloc() or equivalent call used to
  * allocate the buffer. It will generally be equal to pSrcBuffer (when
  * bufferStride[] values are all positive), but not necessarily. If specified,
@@ -2235,7 +2232,7 @@ bool GDALAbstractMDArray::IWrite(const GUInt64 *, const size_t *,
  * validation is needed, nullptr can be passed.
  *
  * @param nSrcBufferAllocSize  Optional buffer size, that can be used to
- * validate the validty of pSrcBuffer. This is the size of the buffer starting
+ * validate the validity of pSrcBuffer. This is the size of the buffer starting
  * at pSrcBufferAllocStart. If specified, pDstBufferAllocStart should be also
  *                             set to the appropriate value.
  *                             If no validation is needed, 0 can be passed.
@@ -3116,6 +3113,7 @@ lbl_next_depth:
             goto end;
     }
 
+    assert(dimIdx > 0);
     dimIdx--;
     // cppcheck-suppress negativeContainerIndex
     switch (stack[dimIdx].return_point)
@@ -3335,7 +3333,7 @@ const char *GDALAttribute::ReadAsString() const
  *
  * This function will only return the first element if there are several.
  *
- * It can fail if its value can be converted to integer.
+ * It can fail if its value can not be converted to integer.
  *
  * This is the same as the C function GDALAttributeReadAsInt()
  *
@@ -3353,6 +3351,31 @@ int GDALAttribute::ReadAsInt() const
 }
 
 /************************************************************************/
+/*                            ReadAsInt64()                             */
+/************************************************************************/
+
+/** Return the value of an attribute as an int64_t.
+ *
+ * This function will only return the first element if there are several.
+ *
+ * It can fail if its value can not be converted to long.
+ *
+ * This is the same as the C function GDALAttributeReadAsInt64()
+ *
+ * @return an int64_t, or INT64_MIN in case of error.
+ */
+int64_t GDALAttribute::ReadAsInt64() const
+{
+    const auto nDims = GetDimensionCount();
+    std::vector<GUInt64> startIdx(1 + nDims, 0);
+    std::vector<size_t> count(1 + nDims, 1);
+    int64_t nRet = INT64_MIN;
+    Read(startIdx.data(), count.data(), nullptr, nullptr,
+         GDALExtendedDataType::Create(GDT_Int64), &nRet, &nRet, sizeof(nRet));
+    return nRet;
+}
+
+/************************************************************************/
 /*                            ReadAsDouble()                            */
 /************************************************************************/
 
@@ -3360,7 +3383,7 @@ int GDALAttribute::ReadAsInt() const
  *
  * This function will only return the first element if there are several.
  *
- * It can fail if its value can be converted to double.
+ * It can fail if its value can not be converted to double.
  *
  * This is the same as the C function GDALAttributeReadAsInt()
  *
@@ -3438,6 +3461,36 @@ std::vector<int> GDALAttribute::ReadAsIntArray() const
     }
     Read(startIdx.data(), count.data(), nullptr, nullptr,
          GDALExtendedDataType::Create(GDT_Int32), &res[0], res.data(),
+         res.size() * sizeof(res[0]));
+    return res;
+}
+
+/************************************************************************/
+/*                          ReadAsInt64Array()                          */
+/************************************************************************/
+
+/** Return the value of an attribute as an array of int64_t.
+ *
+ * This is the same as the C function GDALAttributeReadAsInt64Array().
+ */
+std::vector<int64_t> GDALAttribute::ReadAsInt64Array() const
+{
+    const auto nElts = GetTotalElementsCount();
+#if SIZEOF_VOIDP == 4
+    if (nElts > static_cast<size_t>(nElts))
+        return {};
+#endif
+    std::vector<int64_t> res(static_cast<size_t>(nElts));
+    const auto &dims = GetDimensions();
+    const auto nDims = GetDimensionCount();
+    std::vector<GUInt64> startIdx(1 + nDims, 0);
+    std::vector<size_t> count(1 + nDims);
+    for (size_t i = 0; i < nDims; i++)
+    {
+        count[i] = static_cast<size_t>(dims[i]->GetSize());
+    }
+    Read(startIdx.data(), count.data(), nullptr, nullptr,
+         GDALExtendedDataType::Create(GDT_Int64), &res[0], res.data(),
          res.size() * sizeof(res[0]));
     return res;
 }
@@ -3558,6 +3611,30 @@ bool GDALAttribute::WriteInt(int nVal)
 }
 
 /************************************************************************/
+/*                              WriteInt64()                             */
+/************************************************************************/
+
+/** Write an attribute from an int64_t value.
+ *
+ * Type conversion will be performed if needed. If the attribute contains
+ * multiple values, only the first one will be updated.
+ *
+ * This is the same as the C function GDALAttributeWriteInt().
+ *
+ * @param nVal Value.
+ * @return true in case of success.
+ */
+bool GDALAttribute::WriteInt64(int64_t nVal)
+{
+    const auto nDims = GetDimensionCount();
+    std::vector<GUInt64> startIdx(1 + nDims, 0);
+    std::vector<size_t> count(1 + nDims, 1);
+    return Write(startIdx.data(), count.data(), nullptr, nullptr,
+                 GDALExtendedDataType::Create(GDT_Int64), &nVal, &nVal,
+                 sizeof(nVal));
+}
+
+/************************************************************************/
 /*                                Write()                               */
 /************************************************************************/
 
@@ -3612,6 +3689,75 @@ bool GDALAttribute::Write(CSLConstList vals)
     return Write(startIdx.data(), count.data(), nullptr, nullptr,
                  GDALExtendedDataType::CreateString(), vals, vals,
                  static_cast<size_t>(GetTotalElementsCount()) * sizeof(char *));
+}
+
+/************************************************************************/
+/*                                Write()                               */
+/************************************************************************/
+
+/** Write an attribute from an array of int.
+ *
+ * Type conversion will be performed if needed.
+ *
+ * Exactly GetTotalElementsCount() strings must be provided
+ *
+ * This is the same as the C function GDALAttributeWriteIntArray()
+ *
+ * @param vals Array of int.
+ * @param nVals Should be equal to GetTotalElementsCount().
+ * @return true in case of success.
+ */
+bool GDALAttribute::Write(const int *vals, size_t nVals)
+{
+    if (nVals != GetTotalElementsCount())
+    {
+        CPLError(CE_Failure, CPLE_AppDefined, "Invalid number of input values");
+        return false;
+    }
+    const auto nDims = GetDimensionCount();
+    std::vector<GUInt64> startIdx(1 + nDims, 0);
+    std::vector<size_t> count(1 + nDims);
+    const auto &dims = GetDimensions();
+    for (size_t i = 0; i < nDims; i++)
+        count[i] = static_cast<size_t>(dims[i]->GetSize());
+    return Write(startIdx.data(), count.data(), nullptr, nullptr,
+                 GDALExtendedDataType::Create(GDT_Int32), vals, vals,
+                 static_cast<size_t>(GetTotalElementsCount()) * sizeof(GInt32));
+}
+
+/************************************************************************/
+/*                                Write()                               */
+/************************************************************************/
+
+/** Write an attribute from an array of int64_t.
+ *
+ * Type conversion will be performed if needed.
+ *
+ * Exactly GetTotalElementsCount() strings must be provided
+ *
+ * This is the same as the C function GDALAttributeWriteLongArray()
+ *
+ * @param vals Array of int64_t.
+ * @param nVals Should be equal to GetTotalElementsCount().
+ * @return true in case of success.
+ */
+bool GDALAttribute::Write(const int64_t *vals, size_t nVals)
+{
+    if (nVals != GetTotalElementsCount())
+    {
+        CPLError(CE_Failure, CPLE_AppDefined, "Invalid number of input values");
+        return false;
+    }
+    const auto nDims = GetDimensionCount();
+    std::vector<GUInt64> startIdx(1 + nDims, 0);
+    std::vector<size_t> count(1 + nDims);
+    const auto &dims = GetDimensions();
+    for (size_t i = 0; i < nDims; i++)
+        count[i] = static_cast<size_t>(dims[i]->GetSize());
+    return Write(startIdx.data(), count.data(), nullptr, nullptr,
+                 GDALExtendedDataType::Create(GDT_Int64), vals, vals,
+                 static_cast<size_t>(GetTotalElementsCount()) *
+                     sizeof(int64_t));
 }
 
 /************************************************************************/
@@ -3778,7 +3924,7 @@ bool GDALMDArray::CopyFromAllExceptValues(const GDALMDArray *poSrcArray,
  * @param poSrcDS    Source dataset. Might be nullptr (but for correct behavior
  *                   of some output drivers this is not recommended)
  * @param poSrcArray Source array. Should NOT be nullptr.
- * @param bStrict Whether to enable stict mode. In strict mode, any error will
+ * @param bStrict Whether to enable strict mode. In strict mode, any error will
  *                stop the copy. In relaxed mode, the copy will be attempted to
  *                be pursued.
  * @param nCurCost  Should be provided as a variable initially set to 0.
@@ -4097,6 +4243,17 @@ GDALMDArray::GetCacheRootGroup(bool bCanCreate,
     }
 
     osCacheFilenameOut = osFilename + ".gmac";
+    if (STARTS_WITH(osFilename.c_str(), "/vsicurl/http"))
+    {
+        const auto nPosQuestionMark = osFilename.find('?');
+        if (nPosQuestionMark != std::string::npos)
+        {
+            osCacheFilenameOut =
+                osFilename.substr(0, nPosQuestionMark)
+                    .append(".gmac")
+                    .append(osFilename.substr(nPosQuestionMark));
+        }
+    }
     const char *pszProxy = PamGetProxy(osCacheFilenameOut.c_str());
     if (pszProxy != nullptr)
         osCacheFilenameOut = pszProxy;
@@ -5540,7 +5697,7 @@ CreateFieldNameExtractArray(const std::shared_ptr<GDALMDArray> &self,
  * array, with the values in first dimension reversed. That is
  * [[4,5,6,7],[0,1,2,3]].</li>
  * <li>GetView("[newaxis,...]"): returns a
- * 3-dimensional array, with an addditional dimension of size 1 put at the
+ * 3-dimensional array, with an additional dimension of size 1 put at the
  * beginning. That is [[[0,1,2,3],[4,5,6,7]]].</li>
  * </ul>
  *
@@ -5572,6 +5729,7 @@ CreateFieldNameExtractArray(const std::shared_ptr<GDALMDArray> &self,
  * a view of it (not a copy), or nullptr in case of error.
  */
 // clang-format on
+
 std::shared_ptr<GDALMDArray>
 GDALMDArray::GetView(const std::string &viewExpr) const
 {
@@ -8291,7 +8449,18 @@ lbl_next_depth:
  * orthorectifying a NASA EMIT dataset.
  *
  * For NASA EMIT datasets, if apoNewDims[] and poTargetSRS is NULL, the
- * geometry lookup table (GLT) is used for fast orthorectification.
+ * geometry lookup table (GLT) is used by default for fast orthorectification.
+ *
+ * Options available are:
+ * <ul>
+ * <li>EMIT_ORTHORECTIFICATION=YES/NO: defaults to YES for a NASA EMIT dataset.
+ * Can be set to NO to use generic reprojection method.
+ * </li>
+ * <li>USE_GOOD_WAVELENGTHS=YES/NO: defaults to YES. Only used for EMIT
+ * orthorectification to take into account the value of the
+ * /sensor_band_parameters/good_wavelengths array to decide if slices of the
+ * current array along the band dimension are valid.</li>
+ * </ul>
  *
  * @param apoNewDims New dimensions. Its size should be GetDimensionCount().
  *                   apoNewDims[i] can be NULL to let the method automatically
@@ -8361,9 +8530,9 @@ std::shared_ptr<GDALMDArray> GDALMDArray::GetResampled(
                     poGLT_Y->GetDimensions()[1]->GetName() == "ortho_x")
                 {
                     return CreateGLTOrthorectified(
-                        self, poGLT_X, poGLT_Y,
+                        self, poRootGroup, poGLT_X, poGLT_Y,
                         /* nGLTIndexOffset = */ -1,
-                        poAttrGeotransform->ReadAsDoubleArray());
+                        poAttrGeotransform->ReadAsDoubleArray(), papszOptions);
                 }
             }
         }
@@ -12461,6 +12630,81 @@ GDALMDArrayH GDALMDArrayGetGridded(GDALMDArrayH hArray,
 }
 
 /************************************************************************/
+/*                      GDALMDArrayGetMeshGrid()                        */
+/************************************************************************/
+
+/** Return a list of multidimensional arrays from a list of one-dimensional
+ * arrays.
+ *
+ * This is typically used to transform one-dimensional longitude, latitude
+ * arrays into 2D ones.
+ *
+ * More formally, for one-dimensional arrays x1, x2,..., xn with lengths
+ * Ni=len(xi), returns (N1, N2, ..., Nn) shaped arrays if indexing="ij" or
+ * (N2, N1, ..., Nn) shaped arrays if indexing="xy" with the elements of xi
+ * repeated to fill the matrix along the first dimension for x1, the second
+ * for x2 and so on.
+ *
+ * For example, if x = [1, 2], and y = [3, 4, 5],
+ * GetMeshGrid([x, y], ["INDEXING=xy"]) will return [xm, ym] such that
+ * xm=[[1, 2],[1, 2],[1, 2]] and ym=[[3, 3],[4, 4],[5, 5]],
+ * or more generally xm[any index][i] = x[i] and ym[i][any index]=y[i]
+ *
+ * and
+ * GetMeshGrid([x, y], ["INDEXING=ij"]) will return [xm, ym] such that
+ * xm=[[1, 1, 1],[2, 2, 2]] and ym=[[3, 4, 5],[3, 4, 5]],
+ * or more generally xm[i][any index] = x[i] and ym[any index][i]=y[i]
+ *
+ * The currently supported options are:
+ * <ul>
+ * <li>INDEXING=xy/ij: Cartesian ("xy", default) or matrix ("ij") indexing of
+ * output.
+ * </li>
+ * </ul>
+ *
+ * This is the same as
+ * <a href="https://numpy.org/doc/stable/reference/generated/numpy.meshgrid.html">numpy.meshgrid()</a>
+ * function.
+ *
+ * The returned array (of arrays) must be freed with GDALReleaseArrays().
+ * If only the array itself needs to be freed, CPLFree() should be called
+ * (and GDALMDArrayRelease() on individual array members).
+ *
+ * This is the same as the C++ method GDALMDArray::GetMeshGrid()
+ *
+ * @param pahInputArrays Input arrays
+ * @param nCountInputArrays Number of input arrays
+ * @param pnCountOutputArrays Pointer to the number of values returned. Must NOT be NULL.
+ * @param papszOptions NULL, or NULL terminated list of options.
+ *
+ * @return an array of *pnCountOutputArrays arrays.
+ * @since 3.10
+ */
+GDALMDArrayH *GDALMDArrayGetMeshGrid(const GDALMDArrayH *pahInputArrays,
+                                     size_t nCountInputArrays,
+                                     size_t *pnCountOutputArrays,
+                                     CSLConstList papszOptions)
+{
+    VALIDATE_POINTER1(pahInputArrays, __func__, nullptr);
+    VALIDATE_POINTER1(pnCountOutputArrays, __func__, nullptr);
+
+    std::vector<std::shared_ptr<GDALMDArray>> apoInputArrays;
+    for (size_t i = 0; i < nCountInputArrays; ++i)
+        apoInputArrays.push_back(pahInputArrays[i]->m_poImpl);
+
+    const auto apoOutputArrays =
+        GDALMDArray::GetMeshGrid(apoInputArrays, papszOptions);
+    auto ret = static_cast<GDALMDArrayH *>(
+        CPLMalloc(sizeof(GDALMDArrayH) * apoOutputArrays.size()));
+    for (size_t i = 0; i < apoOutputArrays.size(); i++)
+    {
+        ret[i] = new GDALMDArrayHS(apoOutputArrays[i]);
+    }
+    *pnCountOutputArrays = apoOutputArrays.size();
+    return ret;
+}
+
+/************************************************************************/
 /*                        GDALReleaseArrays()                           */
 /************************************************************************/
 
@@ -12721,7 +12965,7 @@ const char *GDALAttributeReadAsString(GDALAttributeH hAttr)
  *
  * This function will only return the first element if there are several.
  *
- * It can fail if its value can be converted to integer.
+ * It can fail if its value can not be converted to integer.
  *
  * This is the same as the C++ method GDALAttribute::ReadAsInt()
  *
@@ -12734,6 +12978,26 @@ int GDALAttributeReadAsInt(GDALAttributeH hAttr)
 }
 
 /************************************************************************/
+/*                      GDALAttributeReadAsInt64()                      */
+/************************************************************************/
+
+/** Return the value of an attribute as a int64_t.
+ *
+ * This function will only return the first element if there are several.
+ *
+ * It can fail if its value can not be converted to integer.
+ *
+ * This is the same as the C++ method GDALAttribute::ReadAsInt64()
+ *
+ * @return an int64_t, or INT64_MIN in case of error.
+ */
+int64_t GDALAttributeReadAsInt64(GDALAttributeH hAttr)
+{
+    VALIDATE_POINTER1(hAttr, __func__, 0);
+    return hAttr->m_poImpl->ReadAsInt64();
+}
+
+/************************************************************************/
 /*                       GDALAttributeReadAsDouble()                    */
 /************************************************************************/
 
@@ -12741,7 +13005,7 @@ int GDALAttributeReadAsInt(GDALAttributeH hAttr)
  *
  * This function will only return the first element if there are several.
  *
- * It can fail if its value can be converted to double.
+ * It can fail if its value can not be converted to double.
  *
  * This is the same as the C++ method GDALAttribute::ReadAsDouble()
  *
@@ -12793,6 +13057,35 @@ int *GDALAttributeReadAsIntArray(GDALAttributeH hAttr, size_t *pnCount)
     if (!ret)
         return nullptr;
     memcpy(ret, tmp.data(), tmp.size() * sizeof(int));
+    *pnCount = tmp.size();
+    return ret;
+}
+
+/************************************************************************/
+/*                     GDALAttributeReadAsInt64Array()                  */
+/************************************************************************/
+
+/** Return the value of an attribute as an array of int64_t.
+ *
+ * This is the same as the C++ method GDALAttribute::ReadAsInt64Array()
+ *
+ * @param hAttr Attribute
+ * @param pnCount Pointer to the number of values returned. Must NOT be NULL.
+ * @return array to be freed with CPLFree(), or nullptr.
+ */
+int64_t *GDALAttributeReadAsInt64Array(GDALAttributeH hAttr, size_t *pnCount)
+{
+    VALIDATE_POINTER1(hAttr, __func__, nullptr);
+    VALIDATE_POINTER1(pnCount, __func__, nullptr);
+    *pnCount = 0;
+    auto tmp(hAttr->m_poImpl->ReadAsInt64Array());
+    if (tmp.empty())
+        return nullptr;
+    auto ret = static_cast<int64_t *>(
+        VSI_MALLOC2_VERBOSE(tmp.size(), sizeof(int64_t)));
+    if (!ret)
+        return nullptr;
+    memcpy(ret, tmp.data(), tmp.size() * sizeof(int64_t));
     *pnCount = tmp.size();
     return ret;
 }
@@ -12894,6 +13187,27 @@ int GDALAttributeWriteInt(GDALAttributeH hAttr, int nVal)
 }
 
 /************************************************************************/
+/*                        GDALAttributeWriteInt64()                     */
+/************************************************************************/
+
+/** Write an attribute from an int64_t value.
+ *
+ * Type conversion will be performed if needed. If the attribute contains
+ * multiple values, only the first one will be updated.
+ *
+ * This is the same as the C++ method GDALAttribute::WriteLong()
+ *
+ * @param hAttr Attribute
+ * @param nVal Value.
+ * @return TRUE in case of success.
+ */
+int GDALAttributeWriteInt64(GDALAttributeH hAttr, int64_t nVal)
+{
+    VALIDATE_POINTER1(hAttr, __func__, FALSE);
+    return hAttr->m_poImpl->WriteInt64(nVal);
+}
+
+/************************************************************************/
 /*                        GDALAttributeWriteDouble()                    */
 /************************************************************************/
 
@@ -12936,6 +13250,56 @@ int GDALAttributeWriteStringArray(GDALAttributeH hAttr,
 {
     VALIDATE_POINTER1(hAttr, __func__, FALSE);
     return hAttr->m_poImpl->Write(papszValues);
+}
+
+/************************************************************************/
+/*                       GDALAttributeWriteIntArray()                */
+/************************************************************************/
+
+/** Write an attribute from an array of int.
+ *
+ * Type conversion will be performed if needed.
+ *
+ * Exactly GetTotalElementsCount() strings must be provided
+ *
+ * This is the same as the C++ method GDALAttribute::Write(const int *,
+ * size_t)
+ *
+ * @param hAttr Attribute
+ * @param panValues Array of int.
+ * @param nCount Should be equal to GetTotalElementsCount().
+ * @return TRUE in case of success.
+ */
+int GDALAttributeWriteIntArray(GDALAttributeH hAttr, const int *panValues,
+                               size_t nCount)
+{
+    VALIDATE_POINTER1(hAttr, __func__, FALSE);
+    return hAttr->m_poImpl->Write(panValues, nCount);
+}
+
+/************************************************************************/
+/*                       GDALAttributeWriteInt64Array()                 */
+/************************************************************************/
+
+/** Write an attribute from an array of int64_t.
+ *
+ * Type conversion will be performed if needed.
+ *
+ * Exactly GetTotalElementsCount() strings must be provided
+ *
+ * This is the same as the C++ method GDALAttribute::Write(const int64_t *,
+ * size_t)
+ *
+ * @param hAttr Attribute
+ * @param panValues Array of int64_t.
+ * @param nCount Should be equal to GetTotalElementsCount().
+ * @return TRUE in case of success.
+ */
+int GDALAttributeWriteInt64Array(GDALAttributeH hAttr, const int64_t *panValues,
+                                 size_t nCount)
+{
+    VALIDATE_POINTER1(hAttr, __func__, FALSE);
+    return hAttr->m_poImpl->Write(panValues, nCount);
 }
 
 /************************************************************************/

@@ -741,12 +741,11 @@ def test_ogr_rfc28_union_all_three_branch_and(data_ds):
 # Test lack of end-of-string character
 
 
+@gdaltest.enable_exceptions()
 def test_ogr_rfc28_33(data_ds):
 
-    with gdal.quiet_errors():
-        lyr = data_ds.ExecuteSQL("select * from idlink where name='foo")
-
-    assert lyr is None
+    with pytest.raises(Exception, match="Did not find end-of-string character"):
+        data_ds.ExecuteSQL("select * from idlink'")
 
 
 ###############################################################################
@@ -881,7 +880,7 @@ def test_ogr_rfc28_39(data_ds):
 
 
 ###############################################################################
-# Test MIN(), MAX() and AVG() on a date (#5333)
+# Test MIN(), MAX(), AVG(), STDDEV_POP(), STDDEV_SAMP() on a date (#5333)
 
 
 def test_ogr_rfc28_40():
@@ -896,15 +895,16 @@ def test_ogr_rfc28_40():
     feat.SetField(0, "2013/01/01 00:00:00")
     lyr.CreateFeature(feat)
 
-    with ds.ExecuteSQL("SELECT MIN(DATE), MAX(DATE), AVG(DATE) from test") as lyr:
+    with ds.ExecuteSQL(
+        "SELECT MIN(DATE), MAX(DATE), AVG(DATE), STDDEV_POP(DATE), STDDEV_SAMP(DATE) from test"
+    ) as sql_lyr:
 
-        ogrtest.check_features_against_list(lyr, "MIN_DATE", ["2013/01/01 00:00:00"])
-        lyr.ResetReading()
-        ogrtest.check_features_against_list(lyr, "MAX_DATE", ["2013/12/31 23:59:59"])
-        lyr.ResetReading()
-        ogrtest.check_features_against_list(
-            lyr, "AVG_DATE", ["2013/07/02 11:59:59.500"]
-        )
+        f = sql_lyr.GetNextFeature()
+        assert f["MIN_DATE"] == "2013/01/01 00:00:00"
+        assert f["MAX_DATE"] == "2013/12/31 23:59:59"
+        assert f["AVG_DATE"] == "2013/07/02 11:59:59.500"
+        assert f["STDDEV_POP_DATE"] == pytest.approx(15767999.5, rel=1e-15)
+        assert f["STDDEV_SAMP_DATE"] == pytest.approx(22299318.744392183, rel=1e-15)
 
 
 ###############################################################################

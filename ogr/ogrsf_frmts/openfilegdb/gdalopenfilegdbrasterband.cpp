@@ -117,10 +117,14 @@ bool OGROpenFileGDBDataSource::OpenRaster(const GDALOpenInfo *poOpenInfo,
         return false;
     }
 
-    int iRow = 0;
+    int64_t iRow = 0;
     while (iRow < oTable.GetTotalRecordCount() &&
            (iRow = oTable.GetAndSelectNextNonEmptyRow(iRow)) >= 0)
     {
+        if (iRow >= INT32_MAX)
+        {
+            return false;
+        }
         auto psField = oTable.GetFieldValue(i_raster_id);
         if (!psField)
         {
@@ -137,7 +141,7 @@ bool OGROpenFileGDBDataSource::OpenRaster(const GDALOpenInfo *poOpenInfo,
             continue;
         }
 
-        const int nGDBRasterBandId = iRow + 1;
+        const int nGDBRasterBandId = static_cast<int>(iRow) + 1;
 
         psField = oTable.GetFieldValue(i_sequence_nbr);
         if (!psField)
@@ -1545,10 +1549,6 @@ CPLErr GDALOpenFileGDBRasterBand::IReadBlock(int nBlockXOff, int nBlockYOff,
                 CPLError(CE_Failure, CPLE_AppDefined, "Invalid JPEG blob");
                 return CE_Failure;
             }
-
-            VSILFILE *fp = VSIFOpenL("tmp.jpg", "wb");
-            VSIFWriteL(pabyData + nJPEGOffset, nJPEGSize, 1, fp);
-            VSIFCloseL(fp);
 
             CPLString osTmpFilename;
             osTmpFilename.Printf("/vsimem/_openfilegdb/%p.jpg", this);

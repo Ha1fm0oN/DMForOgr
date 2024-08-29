@@ -48,7 +48,7 @@ CPL_C_START              // Necessary for compiling in GDAL project
 #ifdef _WIN64
 #include "gdal\release-1911-x64\cpl_string.h"  // For CPL_ENC_UTF8
 #else
-#include "gdal\release-1911-32\cpl_string.h"  // For CPL_ENC_UTF8szNumberOfVerticesEsp
+#include "gdal\release-1911-32\cpl_string.h"  // For CPL_ENC_UTF8
 #endif
 #endif
 
@@ -184,21 +184,6 @@ void MM_FillFieldDescriptorByLanguage(void)
 
 const char *MM_pszLogFilename = nullptr;
 
-// Logging
-const char *MMLog(const char *pszMsg, int nLineNumber)
-{
-    FILE *f;
-
-    if (MM_pszLogFilename == nullptr)
-        return pszMsg;
-    f = fopen(MM_pszLogFilename, "at");
-    if (f == nullptr)
-        return pszMsg;
-    fprintf(f, "%d: %s\n", nLineNumber, pszMsg); /*ok*/
-    fclose(f);
-    return pszMsg;
-}
-
 static const char MM_EmptyString[] = {""};
 #define MM_SetEndOfString (*MM_EmptyString)
 
@@ -331,11 +316,11 @@ static MM_BYTE MM_GetDefaultDesiredDBFFieldWidth(const struct MM_FIELD *camp)
     return (MM_BYTE)(e < 80 ? e : 80);
 }
 
-static MM_BOOLEAN MM_is_field_name_lowercase(const char *cadena)
+static MM_BOOLEAN MM_is_field_name_lowercase(const char *szChain)
 {
     const char *p;
 
-    for (p = cadena; *p; p++)
+    for (p = szChain; *p; p++)
     {
         if ((*p >= 'a' && *p <= 'z'))
             return TRUE;
@@ -344,11 +329,11 @@ static MM_BOOLEAN MM_is_field_name_lowercase(const char *cadena)
 }
 
 static MM_BOOLEAN
-MM_Is_classical_DBF_field_name_or_lowercase(const char *cadena)
+MM_Is_classical_DBF_field_name_or_lowercase(const char *szChain)
 {
     const char *p;
 
-    for (p = cadena; *p; p++)
+    for (p = szChain; *p; p++)
     {
         if ((*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z') ||
             (*p >= '0' && *p <= '9') || *p == '_')
@@ -356,7 +341,7 @@ MM_Is_classical_DBF_field_name_or_lowercase(const char *cadena)
         else
             return FALSE;
     }
-    if (cadena[0] == '_')
+    if (szChain[0] == '_')
         return FALSE;
     return TRUE;
 }
@@ -507,15 +492,15 @@ MM_InitializeBytesExtendedFieldNameFields(struct MM_DATA_BASE_XP *bd_xp,
            0, 1);
 }
 
-static short int MM_return_common_valid_DBF_field_name_string(char *cadena)
+static short int MM_return_common_valid_DBF_field_name_string(char *szChain)
 {
     char *p;
     short int error_retornat = 0;
 
-    if (!cadena)
+    if (!szChain)
         return 0;
-    //strupr(cadena);
-    for (p = cadena; *p; p++)
+    //strupr(szChain);
+    for (p = szChain; *p; p++)
     {
         (*p) = (char)toupper((unsigned char)*p);
         if ((*p >= 'A' && *p <= 'Z') || (*p >= '0' && *p <= '9') || *p == '_')
@@ -526,29 +511,29 @@ static short int MM_return_common_valid_DBF_field_name_string(char *cadena)
             error_retornat |= MM_FIELD_NAME_CHARACTER_INVALID;
         }
     }
-    if (cadena[0] == '_')
+    if (szChain[0] == '_')
     {
         // To avoid having field names starting by '_' this case is
         // substituted by a 0 (not a '\0').
-        cadena[0] = '0';
+        szChain[0] = '0';
         error_retornat |= MM_FIELD_NAME_FIRST_CHARACTER_;
     }
     return error_retornat;
 }
 
-static short int MM_ReturnValidClassicDBFFieldName(char *cadena)
+static short int MM_ReturnValidClassicDBFFieldName(char *szChain)
 {
     size_t long_nom_camp;
     short int error_retornat = 0;
 
-    long_nom_camp = strlen(cadena);
+    long_nom_camp = strlen(szChain);
     if ((long_nom_camp < 1) ||
         (long_nom_camp >= MM_MAX_LON_CLASSICAL_FIELD_NAME_DBF))
     {
-        cadena[MM_MAX_LON_FIELD_NAME_DBF - 1] = '\0';
+        szChain[MM_MAX_LON_FIELD_NAME_DBF - 1] = '\0';
         error_retornat |= MM_FIELD_NAME_TOO_LONG;
     }
-    error_retornat |= MM_return_common_valid_DBF_field_name_string(cadena);
+    error_retornat |= MM_return_common_valid_DBF_field_name_string(szChain);
     return error_retornat;
 }
 
@@ -640,11 +625,12 @@ MM_GiveOffsetExtendedFieldName(const struct MM_FIELD *camp)
 
 int MM_WriteNRecordsMMBD_XPFile(struct MMAdmDatabase *MMAdmDB)
 {
-    if (!MMAdmDB->pMMBDXP || !MMAdmDB->pFExtDBF)
+    if (!MMAdmDB->pMMBDXP || !MMAdmDB->pMMBDXP->pfDataBase)
         return 0;
 
     // Updating number of features in features table
-    fseek_function(MMAdmDB->pFExtDBF, MM_FIRST_OFFSET_to_N_RECORDS, SEEK_SET);
+    fseek_function(MMAdmDB->pMMBDXP->pfDataBase, MM_FIRST_OFFSET_to_N_RECORDS,
+                   SEEK_SET);
 
     if (MMAdmDB->pMMBDXP->nRecords > UINT32_MAX)
     {
@@ -658,35 +644,39 @@ int MM_WriteNRecordsMMBD_XPFile(struct MMAdmDatabase *MMAdmDB)
     {
         GUInt32 nRecords32LowBits =
             (GUInt32)(MMAdmDB->pMMBDXP->nRecords & UINT32_MAX);
-        if (fwrite_function(&nRecords32LowBits, 4, 1, MMAdmDB->pFExtDBF) != 1)
+        if (fwrite_function(&nRecords32LowBits, 4, 1,
+                            MMAdmDB->pMMBDXP->pfDataBase) != 1)
             return 1;
     }
 
-    fseek_function(MMAdmDB->pFExtDBF, MM_SECOND_OFFSET_to_N_RECORDS, SEEK_SET);
+    fseek_function(MMAdmDB->pMMBDXP->pfDataBase, MM_SECOND_OFFSET_to_N_RECORDS,
+                   SEEK_SET);
     if (MMAdmDB->pMMBDXP->dbf_version == MM_MARCA_VERSIO_1_DBF_ESTESA)
     {
         /* from 16 to 19, position MM_SECOND_OFFSET_to_N_RECORDS */
         GUInt32 nRecords32HighBits =
             (GUInt32)(MMAdmDB->pMMBDXP->nRecords >> 32);
-        if (fwrite_function(&nRecords32HighBits, 4, 1, MMAdmDB->pFExtDBF) != 1)
+        if (fwrite_function(&nRecords32HighBits, 4, 1,
+                            MMAdmDB->pMMBDXP->pfDataBase) != 1)
             return 1;
 
         /* from 20 to 27 */
         if (fwrite_function(&(MMAdmDB->pMMBDXP->dbf_on_a_LAN), 8, 1,
-                            MMAdmDB->pFExtDBF) != 1)
+                            MMAdmDB->pMMBDXP->pfDataBase) != 1)
             return 1;
     }
     else
     {
         if (fwrite_function(&(MMAdmDB->pMMBDXP->dbf_on_a_LAN), 12, 1,
-                            MMAdmDB->pFExtDBF) != 1)
+                            MMAdmDB->pMMBDXP->pfDataBase) != 1)
             return 1;
     }
 
     return 0;
 }
 
-static MM_BOOLEAN MM_UpdateEntireHeader(struct MM_DATA_BASE_XP *data_base_XP)
+static MM_BOOLEAN
+MM_OpenIfNeededAndUpdateEntireHeader(struct MM_DATA_BASE_XP *data_base_XP)
 {
     MM_BYTE variable_byte;
     MM_EXT_DBF_N_FIELDS i, j = 0;
@@ -698,12 +688,14 @@ static MM_BOOLEAN MM_UpdateEntireHeader(struct MM_DATA_BASE_XP *data_base_XP)
     int estat;
     char nom_camp[MM_MAX_LON_FIELD_NAME_DBF];
     size_t retorn_fwrite;
-    MM_BOOLEAN table_should_be_closed = FALSE;
+
+    if (!data_base_XP)
+        return FALSE;
 
     if (data_base_XP->pfDataBase == nullptr)
     {
         strcpy(ModeLectura_previ, data_base_XP->ReadingMode);
-        strcpy(data_base_XP->ReadingMode, "wb");
+        strcpy(data_base_XP->ReadingMode, "wb+");
 
         if ((data_base_XP->pfDataBase =
                  fopen_function(data_base_XP->szFileName,
@@ -711,8 +703,11 @@ static MM_BOOLEAN MM_UpdateEntireHeader(struct MM_DATA_BASE_XP *data_base_XP)
         {
             return FALSE;
         }
-
-        table_should_be_closed = TRUE;
+    }
+    else
+    {
+        // If it's open we just update the header
+        fseek_function(data_base_XP->pfDataBase, 0, SEEK_SET);
     }
 
     if ((data_base_XP->nFields) > MM_MAX_N_CAMPS_DBF_CLASSICA)
@@ -1067,30 +1062,50 @@ static MM_BOOLEAN MM_UpdateEntireHeader(struct MM_DATA_BASE_XP *data_base_XP)
         }
     }
 
-    if (table_should_be_closed)
-    {
-        fclose_and_nullify(&data_base_XP->pfDataBase);
-    }
-
     return TRUE;
-} /* End of MM_UpdateEntireHeader() */
+} /* End of MM_OpenIfNeededAndUpdateEntireHeader() */
 
-MM_BOOLEAN MM_CreateDBFFile(struct MM_DATA_BASE_XP *bd_xp,
-                            const char *NomFitxer)
+MM_BOOLEAN MM_CreateAndOpenDBFFile(struct MM_DATA_BASE_XP *bd_xp,
+                                   const char *NomFitxer)
 {
+    time_t currentTime;
+
     if (!NomFitxer || MMIsEmptyString(NomFitxer) || !bd_xp)
         return FALSE;
 
     MM_CheckDBFHeader(bd_xp);
+
+    // Setting the current date
+    currentTime = time(nullptr);
+#ifdef GDAL_COMPILATION
+    {
+        struct tm ltime;
+        VSILocalTime(&currentTime, &ltime);
+
+        bd_xp->year = (short int)(ltime.tm_year + 1900);
+        bd_xp->month = (MM_BYTE)(ltime.tm_mon + 1);
+        bd_xp->day = (MM_BYTE)ltime.tm_mday;
+    }
+#else
+    {
+        struct tm *pLocalTime;
+        pLocalTime = localtime(&currentTime);
+
+        bd_xp->year = pLocalTime->tm_year + 1900;
+        bd_xp->month = pLocalTime->tm_mon + 1;
+        bd_xp->day = pLocalTime->tm_mday;
+    }
+#endif
+
     CPLStrlcpy(bd_xp->szFileName, NomFitxer, sizeof(bd_xp->szFileName));
-    return MM_UpdateEntireHeader(bd_xp);
+    return MM_OpenIfNeededAndUpdateEntireHeader(bd_xp);
 }
 
 void MM_ReleaseMainFields(struct MM_DATA_BASE_XP *data_base_XP)
 {
     MM_EXT_DBF_N_FIELDS i;
     size_t j;
-    char **cadena;
+    char **szChain;
 
     if (data_base_XP->pField)
     {
@@ -1098,11 +1113,11 @@ void MM_ReleaseMainFields(struct MM_DATA_BASE_XP *data_base_XP)
         {
             for (j = 0; j < MM_NUM_IDIOMES_MD_MULTIDIOMA; j++)
             {
-                cadena = data_base_XP->pField[i].Separator;
-                if (cadena[j])
+                szChain = data_base_XP->pField[i].Separator;
+                if (szChain[j])
                 {
-                    free_function(cadena[j]);
-                    cadena[j] = nullptr;
+                    free_function(szChain[j]);
+                    szChain[j] = nullptr;
                 }
             }
         }
@@ -1123,7 +1138,7 @@ int MM_ReadExtendedDBFHeaderFromFile(const char *szFileName,
     FILE_TYPE *pf;
     unsigned short int two_bytes;
     MM_EXT_DBF_N_FIELDS nIField;
-    MM_FIRST_RECORD_OFFSET_TYPE offset_primera_fitxa;
+    uint16_t offset_primera_fitxa;
     MM_FIRST_RECORD_OFFSET_TYPE offset_fals = 0;
     MM_BOOLEAN incoherent_record_size = FALSE;
     MM_BYTE un_byte;
@@ -1138,7 +1153,7 @@ int MM_ReadExtendedDBFHeaderFromFile(const char *szFileName,
     GUInt32 nRecords32LowBits;
     char *pszString;
 
-    if (!szFileName)
+    if (!szFileName || !pMMBDXP)
         return 1;
 
     CPLStrlcpy(pMMBDXP->szFileName, szFileName, sizeof(pMMBDXP->szFileName));
@@ -1247,13 +1262,13 @@ reintenta_lectura_per_si_error_CreaCampBD_XP:
             if (11 > (read_bytes = fread_function(charset_cpg, 1, 10, f_cpg)))
             {
                 charset_cpg[read_bytes] = '\0';
-                p = strstr(charset_cpg, "UTF-8");
+                p = MM_stristr(charset_cpg, "UTF-8");
                 if (p)
                     pMMBDXP->CharSet = MM_JOC_CARAC_UTF8_DBF;
-                p = strstr(charset_cpg, "UTF8");
+                p = MM_stristr(charset_cpg, "UTF8");
                 if (p)
                     pMMBDXP->CharSet = MM_JOC_CARAC_UTF8_DBF;
-                p = strstr(charset_cpg, "ISO-8859-1");
+                p = MM_stristr(charset_cpg, "ISO-8859-1");
                 if (p)
                     pMMBDXP->CharSet = MM_JOC_CARAC_ANSI_DBASE;
             }
@@ -1264,13 +1279,22 @@ reintenta_lectura_per_si_error_CreaCampBD_XP:
     {
         unsigned short FirstRecordOffsetLow16Bits;
         unsigned short FirstRecordOffsetHigh16Bits;
+        GUInt32 nTmp;
 
         memcpy(&FirstRecordOffsetLow16Bits, &offset_primera_fitxa, 2);
         memcpy(&FirstRecordOffsetHigh16Bits, &pMMBDXP->reserved_2, 2);
 
-        pMMBDXP->FirstRecordOffset =
-            ((GUInt32)FirstRecordOffsetHigh16Bits << 16) |
-            FirstRecordOffsetLow16Bits;
+        nTmp = ((GUInt32)FirstRecordOffsetHigh16Bits << 16) |
+               FirstRecordOffsetLow16Bits;
+        if (nTmp > INT32_MAX)
+        {
+            free_function(pMMBDXP->pField);
+            pMMBDXP->pField = nullptr;
+            pMMBDXP->nFields = 0;
+            fclose_and_nullify(&pMMBDXP->pfDataBase);
+            return 1;
+        }
+        pMMBDXP->FirstRecordOffset = (MM_FIRST_RECORD_OFFSET_TYPE)nTmp;
 
         if (some_problems_when_reading > 0)
             offset_fals = pMMBDXP->FirstRecordOffset;
@@ -1671,13 +1695,17 @@ reintenta_lectura_per_si_error_CreaCampBD_XP:
     return 0;
 }  // End of MM_ReadExtendedDBFHeaderFromFile()
 
-void MM_ReleaseDBFHeader(struct MM_DATA_BASE_XP *data_base_XP)
+void MM_ReleaseDBFHeader(struct MM_DATA_BASE_XP **data_base_XP)
 {
-    if (data_base_XP)
-    {
-        MM_ReleaseMainFields(data_base_XP);
-        free_function(data_base_XP);
-    }
+    if (!data_base_XP)
+        return;
+    if (!*data_base_XP)
+        return;
+
+    MM_ReleaseMainFields(*data_base_XP);
+    free_function(*data_base_XP);
+    *data_base_XP = nullptr;
+
     return;
 }
 
@@ -1850,20 +1878,20 @@ int MM_ModifyFieldNameAndDescriptorIfPresentBD_XP(
 }  // End of MM_ModifyFieldNameAndDescriptorIfPresentBD_XP()
 
 static int MM_DuplicateMultilingualString(
-    char *(cadena_final[MM_NUM_IDIOMES_MD_MULTIDIOMA]),
-    const char *const(cadena_inicial[MM_NUM_IDIOMES_MD_MULTIDIOMA]))
+    char *(szChain_final[MM_NUM_IDIOMES_MD_MULTIDIOMA]),
+    const char *const(szChain_inicial[MM_NUM_IDIOMES_MD_MULTIDIOMA]))
 {
     size_t i;
 
     for (i = 0; i < MM_NUM_IDIOMES_MD_MULTIDIOMA; i++)
     {
-        if (cadena_inicial[i])
+        if (szChain_inicial[i])
         {
-            if (nullptr == (cadena_final[i] = strdup(cadena_inicial[i])))
+            if (nullptr == (szChain_final[i] = strdup(szChain_inicial[i])))
                 return 1;
         }
         else
-            cadena_final[i] = nullptr;
+            szChain_final[i] = nullptr;
     }
     return 0;
 }
@@ -1881,31 +1909,9 @@ int MM_DuplicateFieldDBXP(struct MM_FIELD *camp_final,
     return 0;
 }
 
-#ifndef GDAL_COMPILATION
-size_t CPLStrlcpy(char *pszDest, const char *pszSrc, size_t nDestSize)
-{
-    if (nDestSize == 0)
-        return strlen(pszSrc);
-
-    char *pszDestIter = pszDest;
-    const char *pszSrcIter = pszSrc;
-
-    --nDestSize;
-    while (nDestSize != 0 && *pszSrcIter != '\0')
-    {
-        *pszDestIter = *pszSrcIter;
-        ++pszDestIter;
-        ++pszSrcIter;
-        --nDestSize;
-    }
-    *pszDestIter = '\0';
-    return pszSrcIter - pszSrc + strlen(pszSrcIter);
-}
-#endif
-
 // If n_bytes==SIZE_MAX, the parameter is ignored ant, then,
-// it's assumed that szcadena is NUL terminated
-char *MM_oemansi_n(char *szcadena, size_t n_bytes)
+// it's assumed that szszChain is NUL terminated
+char *MM_oemansi_n(char *szszChain, size_t n_bytes)
 {
     size_t u_i;
     unsigned char *punter_bait;
@@ -1922,7 +1928,7 @@ char *MM_oemansi_n(char *szcadena, size_t n_bytes)
         167, 247, 184, 176, 168, 183, 185, 179, 178, 164, 183};
     if (n_bytes == SIZE_MAX)
     {
-        for (punter_bait = (unsigned char *)szcadena; *punter_bait;
+        for (punter_bait = (unsigned char *)szszChain; *punter_bait;
              punter_bait++)
         {
             if (*punter_bait > 127)
@@ -1931,19 +1937,41 @@ char *MM_oemansi_n(char *szcadena, size_t n_bytes)
     }
     else
     {
-        for (u_i = 0, punter_bait = (unsigned char *)szcadena; u_i < n_bytes;
+        for (u_i = 0, punter_bait = (unsigned char *)szszChain; u_i < n_bytes;
              punter_bait++, u_i++)
         {
             if (*punter_bait > 127)
                 *punter_bait = t_oemansi[*punter_bait - 128];
         }
     }
-    return szcadena;
+    return szszChain;
 }
 
-char *MM_oemansi(char *szcadena)
+// An implementation of non-sensitive strstr()
+char *MM_stristr(const char *haystack, const char *needle)
 {
-    return MM_oemansi_n(szcadena, SIZE_MAX);
+    if (!haystack)
+        return nullptr;
+
+    if (!needle)
+        return nullptr;
+
+    if (!*needle)
+        return (char *)haystack;
+
+    char *p1 = (char *)haystack;
+    while (*p1 != '\0' && !EQUALN(p1, needle, strlen(needle)))
+        p1++;
+
+    if (*p1 == '\0')
+        return nullptr;
+
+    return p1;
+}
+
+char *MM_oemansi(char *szszChain)
+{
+    return MM_oemansi_n(szszChain, SIZE_MAX);
 }
 
 static MM_BOOLEAN MM_FillFieldDB_XP(
@@ -2003,7 +2031,9 @@ static MM_BOOLEAN MM_FillFieldDB_XP(
     return TRUE;
 }
 
-size_t MM_DefineFirstPolygonFieldsDB_XP(struct MM_DATA_BASE_XP *bd_xp)
+size_t MM_DefineFirstPolygonFieldsDB_XP(struct MM_DATA_BASE_XP *bd_xp,
+                                        MM_BYTE n_perimeter_decimals,
+                                        MM_BYTE n_area_decimals_decimals)
 {
     MM_EXT_DBF_N_FIELDS i_camp = 0;
 
@@ -2023,13 +2053,15 @@ size_t MM_DefineFirstPolygonFieldsDB_XP(struct MM_DATA_BASE_XP *bd_xp)
 
     MM_FillFieldDB_XP(bd_xp->pField + i_camp, szMMNomCampPerimetreDefecte,
                       szPerimeterOfThePolygonEng, szPerimeterOfThePolygonCat,
-                      szPerimeterOfThePolygonSpa, 'N', MM_MIN_WIDTH_LONG, 9);
+                      szPerimeterOfThePolygonSpa, 'N', MM_MIN_WIDTH_LONG,
+                      n_perimeter_decimals);
     (bd_xp->pField + i_camp)->GeoTopoTypeField = (MM_BYTE)MM_CAMP_ES_PERIMETRE;
     i_camp++;
 
     MM_FillFieldDB_XP(bd_xp->pField + i_camp, szMMNomCampAreaDefecte,
                       szAreaOfThePolygonEng, szAreaOfThePolygonCat,
-                      szAreaOfThePolygonSpa, 'N', MM_MIN_WIDTH_AREA, 12);
+                      szAreaOfThePolygonSpa, 'N', MM_MIN_WIDTH_AREA,
+                      n_area_decimals_decimals);
     (bd_xp->pField + i_camp)->GeoTopoTypeField = (MM_BYTE)MM_CAMP_ES_AREA;
     i_camp++;
 
@@ -2049,7 +2081,8 @@ size_t MM_DefineFirstPolygonFieldsDB_XP(struct MM_DATA_BASE_XP *bd_xp)
     return i_camp;
 }
 
-size_t MM_DefineFirstArcFieldsDB_XP(struct MM_DATA_BASE_XP *bd_xp)
+size_t MM_DefineFirstArcFieldsDB_XP(struct MM_DATA_BASE_XP *bd_xp,
+                                    MM_BYTE n_decimals)
 {
     MM_EXT_DBF_N_FIELDS i_camp;
 
@@ -2070,7 +2103,7 @@ size_t MM_DefineFirstArcFieldsDB_XP(struct MM_DATA_BASE_XP *bd_xp)
 
     MM_FillFieldDB_XP(bd_xp->pField + i_camp, szMMNomCampLongitudArcDefecte,
                       szLengthOfAarcEng, szLengthOfAarcCat, szLengthOfAarcSpa,
-                      'N', MM_MIN_WIDTH_LONG, 9);
+                      'N', MM_MIN_WIDTH_LONG, n_decimals);
     (bd_xp->pField + i_camp)->GeoTopoTypeField = (MM_BYTE)MM_CAMP_ES_LONG_ARC;
     i_camp++;
 
@@ -2133,6 +2166,107 @@ size_t MM_DefineFirstPointFieldsDB_XP(struct MM_DATA_BASE_XP *bd_xp)
     return i_camp;
 }
 
+/*
+    Controlling the number of significant figures is often crucial in science
+    and technology, and the best option when nothing is known about the number
+    to be printed (if it is really small (near to 0), or very large), and
+    allows a good return (the same value) into memory when re-read from a text
+    file with scanf() functions.
+    If you need to print 0.00000000000000000000000000000000000000001 with %f
+    you will need an extremely large string. If you print 1980.45 with %E you
+    obtain 1.98045E+003, needing more space, and not being easy to interpret
+    for some people. Moreover, “normal” users do not want to see 1.0 as
+    1.0E+000 or 1.0E+00. The choice of the format specifier, and the integer
+    to be passed to the ‘*’ is not always easy,
+    and MM_SprintfDoubleSignifFigures() automatically uses a “fair” notation
+    whenever it is possible, resulting in shorter strings, being them under
+    control (the maximum length of the resulting string is always known).
+    Moreover, it avoids some failures in compilers not expecting
+    NAN or INF values.
+*/
+int MM_SprintfDoubleSignifFigures(char *szChain, size_t size_szChain,
+                                  int nSignifFigures, double dfRealValue)
+{
+    double VALOR_LIMIT_PRINT_IN_FORMAT_E;
+    double VALOR_TOO_SMALL_TO_PRINT_f;
+    int retorn, exponent;
+    char *ptr;
+
+#define N_POWERS MM_MAX_XS_DOUBLE
+
+    /* This expression ensures that no garbage is written in
+    the non-significant digits of the integer part, i.e., requesting 9E20
+    with 16 significant digits does not print 90000000000000004905, where
+    "4905" is garbage generated by the print call with such a large value 
+    and "%.16f", but rather writes 9.000000000000000E+20.
+    At the same time, it ensures that 9000 requested with 4 significant
+    digits is written as 9000 and that requested with 5 significant digits
+    is written as 9000.0, but that requested with 3 significant digits is
+    written as 9.00E+03. */
+    double potencies_de_10[N_POWERS] = {
+        1E+1,  1E+2,  1E+3,  1E+4,  1E+5,  1E+6,  1E+7,  1E+8, 1E+9,
+        1E+10, 1E+11, 1E+12, 1E+13, 1E+14, 1E+15, 1E+16, 1E+17};
+
+    /* This expression ensures that -9E-7 requested with 11 significant digits
+    still uses "natural" notation and gives -0.0000009000000000, which still
+    fits exactly within the 20 characters of a 'N' field in dBASE, while
+    requested with 12 significant digits jumps to exponential notation and
+    writes -9.00000000000E-07, which also fits (in this case, comfortably)
+    within the 20 characters of dBASE.
+    The expression could be replaced by: pow(10,-max(0,20-2-signif_digits)); */
+    double fraccions_de_10[N_POWERS + 1] = {
+        1E-1,  1E-2,  1E-3,  1E-4,  1E-5,  1E-6,  1E-7,  1E-8,  1E-9,
+        1E-10, 1E-11, 1E-12, 1E-13, 1E-14, 1E-15, 1E-16, 1E-17, 1E-18};
+
+    if (!szChain)
+        return 0;
+
+    if (size_szChain < 3)
+        return 0;
+
+    memset(szChain, '\0', size_szChain);
+
+    if (MM_IsNANDouble(dfRealValue))
+        return snprintf(szChain, size_szChain, "NAN");
+
+    if (MM_IsDoubleInfinite(dfRealValue))
+        return snprintf(szChain, size_szChain, "INF");
+
+    if (dfRealValue == 0.0)
+        return snprintf(szChain, size_szChain, "%.*f", nSignifFigures, 0.0);
+
+    if (nSignifFigures < 1)
+        return snprintf(szChain, size_szChain, "0.0");
+
+    if (nSignifFigures > N_POWERS)
+        nSignifFigures = N_POWERS;
+
+    retorn = snprintf(szChain, size_szChain, "%.*E", nSignifFigures - 1,
+                      dfRealValue);
+
+    VALOR_LIMIT_PRINT_IN_FORMAT_E = potencies_de_10[nSignifFigures - 1];
+    VALOR_TOO_SMALL_TO_PRINT_f =
+        fraccions_de_10[MM_MAX_XS_DOUBLE - nSignifFigures];
+
+    if (dfRealValue > VALOR_LIMIT_PRINT_IN_FORMAT_E ||
+        dfRealValue < -VALOR_LIMIT_PRINT_IN_FORMAT_E ||
+        (dfRealValue < VALOR_TOO_SMALL_TO_PRINT_f &&
+         dfRealValue > -VALOR_TOO_SMALL_TO_PRINT_f))
+        return retorn;
+
+    ptr = strchr(szChain, 'E');
+    if (!ptr)
+        return 0;
+    exponent = atoi(ptr + 1);
+
+    return sprintf(szChain, "%.*f",
+                   (nSignifFigures - exponent - 1) > 0
+                       ? (nSignifFigures - exponent - 1)
+                       : 0,
+                   dfRealValue);
+#undef N_POWERS
+}  // End of SprintfDoubleXifSignif()
+
 int MM_SecureCopyStringFieldValue(char **pszStringDst, const char *pszStringSrc,
                                   MM_EXT_DBF_N_FIELDS *nStringCurrentLength)
 {
@@ -2178,6 +2312,9 @@ int MM_ChangeDBFWidthField(struct MM_DATA_BASE_XP *data_base_XP,
     MM_EXT_DBF_N_FIELDS i_camp;
     size_t retorn_fwrite;
     int retorn_TruncaFitxer;
+
+    if (!data_base_XP)
+        return 1;
 
     canvi_amplada = nNewWidth - data_base_XP->pField[nIField].BytesPerField;
 
@@ -2371,7 +2508,7 @@ int MM_ChangeDBFWidthField(struct MM_DATA_BASE_XP *data_base_XP,
     }
     data_base_XP->pField[nIField].DecimalsIfFloat = nNewPrecision;
 
-    if ((MM_UpdateEntireHeader(data_base_XP)) == FALSE)
+    if ((MM_OpenIfNeededAndUpdateEntireHeader(data_base_XP)) == FALSE)
         return 1;
 
     return 0;
@@ -2490,29 +2627,29 @@ int MM_GetArcHeights(double *coord_z, FILE_TYPE *pF, MM_N_VERTICES_TYPE n_vrt,
 }  // End of MM_GetArcHeights()
 
 static char *MM_l_RemoveWhitespacesFromEndOfString(char *punter,
-                                                   size_t l_cadena)
+                                                   size_t l_szChain)
 {
-    size_t longitud_cadena = l_cadena;
-    while (longitud_cadena > 0)
+    size_t longitud_szChain = l_szChain;
+    while (longitud_szChain > 0)
     {
-        longitud_cadena--;
-        if (punter[longitud_cadena] != ' ' && punter[longitud_cadena] != '\t')
+        longitud_szChain--;
+        if (punter[longitud_szChain] != ' ' && punter[longitud_szChain] != '\t')
         {
             break;
         }
-        punter[longitud_cadena] = '\0';
+        punter[longitud_szChain] = '\0';
     }
     return punter;
 }
 
-char *MM_RemoveInitial_and_FinalQuotationMarks(char *cadena)
+char *MM_RemoveInitial_and_FinalQuotationMarks(char *szChain)
 {
     char *ptr1, *ptr2;
     char cometa = '"';
 
-    if (*cadena == cometa)
+    if (*szChain == cometa)
     {
-        ptr1 = cadena;
+        ptr1 = szChain;
         ptr2 = ptr1 + 1;
         if (*ptr2)
         {
@@ -2528,23 +2665,23 @@ char *MM_RemoveInitial_and_FinalQuotationMarks(char *cadena)
                 *ptr1 = 0;
         }
     }
-    return cadena;
+    return szChain;
 } /* End of MM_RemoveInitial_and_FinalQuotationMarks() */
 
-char *MM_RemoveLeadingWhitespaceOfString(char *cadena)
+char *MM_RemoveLeadingWhitespaceOfString(char *szChain)
 {
     char *ptr;
     char *ptr2;
 
-    if (cadena == nullptr)
-        return cadena;
+    if (szChain == nullptr)
+        return szChain;
 
-    for (ptr = cadena; *ptr && (*ptr == ' ' || *ptr == '\t'); ptr++)
+    for (ptr = szChain; *ptr && (*ptr == ' ' || *ptr == '\t'); ptr++)
         continue;
 
-    if (ptr != cadena)
+    if (ptr != szChain)
     {
-        ptr2 = cadena;
+        ptr2 = szChain;
         while (*ptr)
         {
             *ptr2 = *ptr;
@@ -2553,7 +2690,7 @@ char *MM_RemoveLeadingWhitespaceOfString(char *cadena)
         }
         *ptr2 = 0;
     }
-    return cadena;
+    return szChain;
 }
 
 char *MM_RemoveWhitespacesFromEndOfString(char *str)

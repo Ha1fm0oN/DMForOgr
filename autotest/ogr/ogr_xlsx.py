@@ -190,6 +190,28 @@ def test_ogr_xlsx_4():
 
 
 ###############################################################################
+# Run test_ogrsf
+
+
+def test_ogr_xlsx_test_ogrsf_update(tmp_path):
+
+    import test_cli_utilities
+
+    if test_cli_utilities.get_test_ogrsf_path() is None:
+        pytest.skip()
+
+    filename = str(tmp_path / "out.xlsx")
+    gdal.VectorTranslate(filename, "data/poly.shp", format="XLSX")
+
+    ret = gdaltest.runexternal(
+        test_cli_utilities.get_test_ogrsf_path() + f" {filename}"
+    )
+
+    assert "INFO" in ret
+    assert "ERROR" not in ret
+
+
+###############################################################################
 # Test write support
 
 
@@ -628,3 +650,18 @@ def test_ogr_xlsx_write_sheet_without_row():
     assert ds.GetLayer(2).GetFeatureCount() == 1
     ds = None
     gdal.Unlink(tmpfilename)
+
+
+###############################################################################
+# Test reading a XLSX file with XML element prefixes
+
+
+def test_ogr_xlsx_read_xml_prefix():
+
+    ds = ogr.Open("data/xlsx/with_xml_prefix.xlsx")
+    lyr = ds.GetLayer(0)
+    assert lyr.GetLayerDefn().GetFieldDefn(0).GetName() == "Col1"
+    assert lyr.GetLayerDefn().GetFieldDefn(1).GetName() == "Col2"
+    f = lyr.GetNextFeature()
+    assert f["Col1"] == "foo"
+    assert f["Col2"] == "bar"
