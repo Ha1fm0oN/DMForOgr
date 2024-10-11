@@ -11,23 +11,7 @@
 # Copyright (c) 2006, Frank Warmerdam <warmerdam@pobox.com>
 # Copyright (c) 2008-2014, Even Rouault <even dot rouault at spatialys.com>
 #
-# Permission is hereby granted, free of charge, to any person obtaining a
-# copy of this software and associated documentation files (the "Software"),
-# to deal in the Software without restriction, including without limitation
-# the rights to use, copy, modify, merge, publish, distribute, sublicense,
-# and/or sell copies of the Software, and to permit persons to whom the
-# Software is furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included
-# in all copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-# OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
-# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-# FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-# DEALINGS IN THE SOFTWARE.
+# SPDX-License-Identifier: MIT
 ###############################################################################
 
 import os
@@ -2559,6 +2543,25 @@ def test_ogr_gml_64(parser):
 
 
 ###############################################################################
+# Test we don't spend too much time parsing documents featuring the billion
+# laugh attack
+
+
+@gdaltest.enable_exceptions()
+@pytest.mark.parametrize("parser", ("XERCES", "EXPAT"))
+def test_ogr_gml_billion_laugh(parser):
+
+    with gdal.config_option("GML_PARSER", parser), pytest.raises(
+        Exception, match="File probably corrupted"
+    ):
+        with gdal.OpenEx("data/gml/billionlaugh.gml") as ds:
+            assert ds.GetDriver().GetDescription() == "GML"
+            for lyr in ds:
+                for f in lyr:
+                    pass
+
+
+###############################################################################
 # Test SRSDIMENSION_LOC=GEOMETRY option (#5606)
 
 
@@ -4626,3 +4629,18 @@ def test_ogr_gml_get_layers_by_name_from_imported_schema_more_tests(tmp_path):
     assert isinstance(
         dat_erst, list
     ), f"Expected 'dat_erst' to be of type 'list', but got {type(dat_erst)}"
+
+
+###############################################################################
+# Test force opening a GML file
+
+
+def test_ogr_gml_force_opening(tmp_vsimem):
+
+    filename = str(tmp_vsimem / "test.gml")
+    gdal.FileFromMemBuffer(filename, open("data/nas/empty_nas.xml", "rb").read())
+
+    # Would be opened by NAS driver if not forced
+    with gdal.config_option("NAS_GFS_TEMPLATE", ""):
+        ds = gdal.OpenEx(filename, allowed_drivers=["GML"])
+        assert ds.GetDriver().GetDescription() == "GML"

@@ -10,23 +10,7 @@
 ###############################################################################
 # Copyright (c) 2009-2013, Even Rouault <even dot rouault at spatialys.com>
 #
-# Permission is hereby granted, free of charge, to any person obtaining a
-# copy of this software and associated documentation files (the "Software"),
-# to deal in the Software without restriction, including without limitation
-# the rights to use, copy, modify, merge, publish, distribute, sublicense,
-# and/or sell copies of the Software, and to permit persons to whom the
-# Software is furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included
-# in all copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-# OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
-# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-# FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-# DEALINGS IN THE SOFTWARE.
+# SPDX-License-Identifier: MIT
 ###############################################################################
 
 import struct
@@ -628,3 +612,28 @@ def test_gdal_contour_fl_e_polygonize(gdal_contour_path, tmp_path):
         )
         i = i + 1
         feat = lyr.GetNextFeature()
+
+
+###############################################################################
+# Test -gt
+
+
+@pytest.mark.require_driver("GPKG")
+@pytest.mark.parametrize("gt", ["0", "1", "unlimited"])
+def test_gdal_contour_gt(gdal_contour_path, tmp_path, gt):
+
+    out_filename = str(tmp_path / "contour.gpkg")
+
+    gdaltest.runexternal(
+        gdal_contour_path
+        + f" -p -amin elev -amax elev2 -fl 76 112 441 -e 3 -gt {gt} ../gdrivers/data/n43.tif {out_filename}"
+    )
+
+    ds = ogr.Open(out_filename)
+
+    lyr = ds.ExecuteSQL("select elev, elev2 from contour order by elev asc")
+
+    # Raster min is 75, max is 460
+    expected_heights = [75, 76, 81, 112, 243, 441]
+
+    assert lyr.GetFeatureCount() == len(expected_heights)

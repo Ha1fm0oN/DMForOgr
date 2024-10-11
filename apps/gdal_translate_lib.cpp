@@ -9,23 +9,7 @@
  * Copyright (c) 2007-2015, Even Rouault <even dot rouault at spatialys.com>
  * Copyright (c) 2015, Faza Mahamood
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "cpl_port.h"
@@ -2737,18 +2721,11 @@ static void CopyBandInfo(GDALRasterBand *poSrcBand, GDALRasterBand *poDstBand,
 
 static int GetColorInterp(const char *pszStr)
 {
-    if (EQUAL(pszStr, "red"))
-        return GCI_RedBand;
-    if (EQUAL(pszStr, "green"))
-        return GCI_GreenBand;
-    if (EQUAL(pszStr, "blue"))
-        return GCI_BlueBand;
-    if (EQUAL(pszStr, "alpha"))
-        return GCI_AlphaBand;
-    if (EQUAL(pszStr, "gray") || EQUAL(pszStr, "grey"))
-        return GCI_GrayIndex;
     if (EQUAL(pszStr, "undefined"))
         return GCI_Undefined;
+    const int eInterp = GDALGetColorInterpretationByName(pszStr);
+    if (eInterp != GCI_Undefined)
+        return eInterp;
     CPLError(CE_Warning, CPLE_NotSupported,
              "Unsupported color interpretation: %s", pszStr);
     return -1;
@@ -3078,7 +3055,8 @@ GDALTranslateOptionsGetParser(GDALTranslateOptions *psOptions,
             _("Add the indicated ground control point to the output dataset."));
 
     argParser->add_argument("-colorinterp")
-        .metavar("{red|green|blue|alpha|gray|undefined},...")
+        .metavar("{red|green|blue|alpha|gray|undefined|pan|coastal|rededge|nir|"
+                 "swir|mwir|lwir|...},...")
         .action(
             [psOptions](const std::string &s)
             {
@@ -3093,7 +3071,8 @@ GDALTranslateOptionsGetParser(GDALTranslateOptions *psOptions,
 
     argParser->add_argument("-colorinterp_X")
         .append()
-        .metavar("{red|green|blue|alpha|gray|undefined}")
+        .metavar("{red|green|blue|alpha|gray|undefined|pan|coastal|rededge|nir|"
+                 "swir|mwir|lwir|...}")
         .help(_("Override the color interpretation of band X."));
 
     {

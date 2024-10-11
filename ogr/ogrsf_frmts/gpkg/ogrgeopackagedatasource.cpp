@@ -8,23 +8,7 @@
  * Copyright (c) 2013, Paul Ramsey <pramsey@boundlessgeo.com>
  * Copyright (c) 2014, Even Rouault <even dot rouault at spatialys.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "ogr_geopackage.h"
@@ -729,7 +713,7 @@ int GDALGeoPackageDataset::GetSrsId(const OGRSpatialReference *poSRSIn)
     if (poSRSIn->GetCoordinateEpoch() > 0 && m_bHasEpochColumn)
     {
         osEpochTest =
-            CPLSPrintf(" AND epoch = %.18g", poSRSIn->GetCoordinateEpoch());
+            CPLSPrintf(" AND epoch = %.17g", poSRSIn->GetCoordinateEpoch());
     }
 
     if (!(poSRS->IsGeographic() && poSRS->GetAxesCount() == 3))
@@ -927,7 +911,7 @@ int GDALGeoPackageDataset::GetSrsId(const OGRSpatialReference *poSRSIn)
     if (poSRSIn->GetCoordinateEpoch() > 0)
     {
         osEpochColumn = ", epoch";
-        osEpochVal = CPLSPrintf(", %.18g", poSRSIn->GetCoordinateEpoch());
+        osEpochVal = CPLSPrintf(", %.17g", poSRSIn->GetCoordinateEpoch());
     }
 
     // Add new SRS row to gpkg_spatial_ref_sys.
@@ -2987,16 +2971,16 @@ bool GDALGeoPackageDataset::OpenRaster(
         const int nTileWidth = atoi(oResult->GetValue(3, 0));
         const int nTileHeight = atoi(oResult->GetValue(4, 0));
         osContentsMinX =
-            CPLSPrintf("%.18g", dfMinX + dfPixelXSize * nTileWidth *
+            CPLSPrintf("%.17g", dfMinX + dfPixelXSize * nTileWidth *
                                              atoi(oResult2->GetValue(0, 0)));
         osContentsMaxY =
-            CPLSPrintf("%.18g", dfMaxY - dfPixelYSize * nTileHeight *
+            CPLSPrintf("%.17g", dfMaxY - dfPixelYSize * nTileHeight *
                                              atoi(oResult2->GetValue(1, 0)));
         osContentsMaxX = CPLSPrintf(
-            "%.18g", dfMinX + dfPixelXSize * nTileWidth *
+            "%.17g", dfMinX + dfPixelXSize * nTileWidth *
                                   (1 + atoi(oResult2->GetValue(2, 0))));
         osContentsMinY = CPLSPrintf(
-            "%.18g", dfMaxY - dfPixelYSize * nTileHeight *
+            "%.17g", dfMaxY - dfPixelYSize * nTileHeight *
                                   (1 + atoi(oResult2->GetValue(3, 0))));
         pszContentsMinX = osContentsMinX.c_str();
         pszContentsMinY = osContentsMinY.c_str();
@@ -3022,7 +3006,7 @@ bool GDALGeoPackageDataset::OpenRaster(
                 static_cast<int>(dfGPKGNoDataValue) != dfGPKGNoDataValue)
             {
                 CPLError(CE_Warning, CPLE_AppDefined,
-                         "data_null = %.18g is invalid for integer data_type",
+                         "data_null = %.17g is invalid for integer data_type",
                          dfGPKGNoDataValue);
             }
             else
@@ -3368,7 +3352,7 @@ CPLErr GDALGeoPackageDataset::FinalizeRasterRegistration()
         "INSERT INTO gpkg_contents "
         "(table_name,data_type,identifier,description,min_x,min_y,max_x,max_y,"
         "last_change,srs_id) VALUES "
-        "('%q','%q','%q','%q',%.18g,%.18g,%.18g,%.18g,");
+        "('%q','%q','%q','%q',%.17g,%.17g,%.17g,%.17g,");
     osInsertGpkgContentsFormatting += (pszCurrentDate) ? "'%q'" : "%s";
     osInsertGpkgContentsFormatting += ",%d)";
     char *pszSQL = sqlite3_mprintf(
@@ -3396,7 +3380,7 @@ CPLErr GDALGeoPackageDataset::FinalizeRasterRegistration()
     pszSQL =
         sqlite3_mprintf("INSERT INTO gpkg_tile_matrix_set "
                         "(table_name,srs_id,min_x,min_y,max_x,max_y) VALUES "
-                        "('%q',%d,%.18g,%.18g,%.18g,%.18g)",
+                        "('%q',%d,%.17g,%.17g,%.17g,%.17g)",
                         m_osRasterTable.c_str(), m_nSRID, m_dfTMSMinX,
                         dfTMSMinY, dfTMSMaxX, m_dfTMSMaxY);
     eErr = SQLCommand(hDB, pszSQL);
@@ -3435,7 +3419,7 @@ CPLErr GDALGeoPackageDataset::FinalizeRasterRegistration()
             "INSERT INTO gpkg_tile_matrix "
             "(table_name,zoom_level,matrix_width,matrix_height,tile_width,tile_"
             "height,pixel_x_size,pixel_y_size) VALUES "
-            "('%q',%d,%d,%d,%d,%d,%.18g,%.18g)",
+            "('%q',%d,%d,%d,%d,%d,%.17g,%.17g)",
             m_osRasterTable.c_str(), i, nTileMatrixWidth, nTileMatrixHeight,
             nTileWidth, nTileHeight, dfPixelXSizeZoomLevel,
             dfPixelYSizeZoomLevel);
@@ -3828,7 +3812,7 @@ CPLErr GDALGeoPackageDataset::IBuildOverviews(
                     "INSERT INTO gpkg_tile_matrix "
                     "(table_name,zoom_level,matrix_width,matrix_height,tile_"
                     "width,tile_height,pixel_x_size,pixel_y_size) VALUES "
-                    "('%q',%d,%d,%d,%d,%d,%.18g,%.18g)",
+                    "('%q',%d,%d,%d,%d,%d,%.17g,%.17g)",
                     m_osRasterTable.c_str(), nNewZoomLevel, nTileMatrixWidth,
                     nTileMatrixHeight, nTileWidth, nTileHeight,
                     dfPixelXSizeZoomLevel, dfPixelYSizeZoomLevel);
@@ -4917,7 +4901,7 @@ void GDALGeoPackageDataset::FlushMetadata()
             if (bHasNoData)
             {
                 oLocalMDMD.SetMetadataItem("NODATA_VALUE",
-                                           CPLSPrintf("%.18g", dfNoDataValue),
+                                           CPLSPrintf("%.17g", dfNoDataValue),
                                            "IMAGE_STRUCTURE");
             }
         }
@@ -5915,7 +5899,7 @@ bool GDALGeoPackageDataset::CreateTileGriddedTable(char **papszOptions)
         "INSERT INTO gpkg_2d_gridded_coverage_ancillary "
         "(tile_matrix_set_name, datatype, scale, offset, precision, "
         "grid_cell_encoding, uom, field_name, quantity_definition) "
-        "VALUES (%Q, '%s', %.18g, %.18g, %.18g, %Q, %Q, %Q, %Q)",
+        "VALUES (%Q, '%s', %.17g, %.17g, %.17g, %Q, %Q, %Q, %Q)",
         m_osRasterTable.c_str(),
         (m_eTF == GPKG_TF_PNG_16BIT) ? "integer" : "float", m_dfScale,
         m_dfOffset, m_dfPrecision, osGridCellEncoding.c_str(),
@@ -6138,13 +6122,13 @@ GDALDataset *GDALGeoPackageDataset::CreateCopy(const char *pszFilename,
                 aosOptions.AddString("VRT");
                 aosOptions.AddString("-projwin");
                 aosOptions.AddString(
-                    CPLSPrintf("%.18g", adfSrcGeoTransform[0]));
-                aosOptions.AddString(CPLSPrintf("%.18g", maxLat));
+                    CPLSPrintf("%.17g", adfSrcGeoTransform[0]));
+                aosOptions.AddString(CPLSPrintf("%.17g", maxLat));
                 aosOptions.AddString(
-                    CPLSPrintf("%.18g", adfSrcGeoTransform[0] +
+                    CPLSPrintf("%.17g", adfSrcGeoTransform[0] +
                                             poSrcDS->GetRasterXSize() *
                                                 adfSrcGeoTransform[1]));
-                aosOptions.AddString(CPLSPrintf("%.18g", minLat));
+                aosOptions.AddString(CPLSPrintf("%.17g", minLat));
                 auto psOptions =
                     GDALTranslateOptionsNew(aosOptions.List(), nullptr);
                 poTmpDS.reset(GDALDataset::FromHandle(GDALTranslate(
@@ -7521,7 +7505,7 @@ OGRLayer *GDALGeoPackageDataset::ExecuteSQL(const char *pszSQLCommand,
 
     CPLString osSQLCommand(pszSQLCommand);
     if (!osSQLCommand.empty() && osSQLCommand.back() == ';')
-        osSQLCommand.resize(osSQLCommand.size() - 1);
+        osSQLCommand.pop_back();
 
     if (pszDialect == nullptr || !EQUAL(pszDialect, "DEBUG"))
     {
@@ -8751,6 +8735,77 @@ static void OGRGeoPackageGeodesicArea(sqlite3_context *pContext, int argc,
 }
 
 /************************************************************************/
+/*                   OGRGeoPackageLengthOrGeodesicLength()              */
+/************************************************************************/
+
+static void OGRGeoPackageLengthOrGeodesicLength(sqlite3_context *pContext,
+                                                int argc, sqlite3_value **argv)
+{
+    if (sqlite3_value_type(argv[0]) != SQLITE_BLOB)
+    {
+        sqlite3_result_null(pContext);
+        return;
+    }
+    if (argc == 2 && sqlite3_value_int(argv[1]) != 1)
+    {
+        CPLError(CE_Warning, CPLE_NotSupported,
+                 "ST_Length(geom, use_ellipsoid) is only supported for "
+                 "use_ellipsoid = 1");
+    }
+
+    const int nBLOBLen = sqlite3_value_bytes(argv[0]);
+    const GByte *pabyBLOB =
+        reinterpret_cast<const GByte *>(sqlite3_value_blob(argv[0]));
+    GPkgHeader sHeader;
+    if (!OGRGeoPackageGetHeader(pContext, argc, argv, &sHeader, false, false))
+    {
+        CPLError(CE_Failure, CPLE_AppDefined, "Invalid geometry");
+        sqlite3_result_blob(pContext, nullptr, 0, nullptr);
+        return;
+    }
+
+    GDALGeoPackageDataset *poDS =
+        static_cast<GDALGeoPackageDataset *>(sqlite3_user_data(pContext));
+
+    OGRSpatialReference *poSrcSRS = nullptr;
+    if (argc == 2)
+    {
+        poSrcSRS = poDS->GetSpatialRef(sHeader.iSrsId, true);
+        if (!poSrcSRS)
+        {
+            CPLError(CE_Failure, CPLE_AppDefined,
+                     "SRID set on geometry (%d) is invalid", sHeader.iSrsId);
+            sqlite3_result_blob(pContext, nullptr, 0, nullptr);
+            return;
+        }
+    }
+
+    auto poGeom = std::unique_ptr<OGRGeometry>(
+        GPkgGeometryToOGR(pabyBLOB, nBLOBLen, nullptr));
+    if (poGeom == nullptr)
+    {
+        // Try also spatialite geometry blobs
+        OGRGeometry *poGeomSpatialite = nullptr;
+        if (OGRSQLiteImportSpatiaLiteGeometry(pabyBLOB, nBLOBLen,
+                                              &poGeomSpatialite) != OGRERR_NONE)
+        {
+            CPLError(CE_Failure, CPLE_AppDefined, "Invalid geometry");
+            sqlite3_result_blob(pContext, nullptr, 0, nullptr);
+            return;
+        }
+        poGeom.reset(poGeomSpatialite);
+    }
+
+    if (argc == 2)
+        poGeom->assignSpatialReference(poSrcSRS);
+
+    sqlite3_result_double(
+        pContext,
+        argc == 1 ? OGR_G_Length(OGRGeometry::ToHandle(poGeom.get()))
+                  : OGR_G_GeodesicLength(OGRGeometry::ToHandle(poGeom.get())));
+}
+
+/************************************************************************/
 /*                      OGRGeoPackageTransform()                        */
 /************************************************************************/
 
@@ -8834,21 +8889,40 @@ void OGRGeoPackageTransform(sqlite3_context *pContext, int argc,
         poCT = poDS->m_poLastCachedCT.get();
     }
 
-    auto poGeom = std::unique_ptr<OGRGeometry>(
-        GPkgGeometryToOGR(pabyBLOB, nBLOBLen, nullptr));
-    if (poGeom == nullptr)
+    if (sHeader.nHeaderLen >= 8)
     {
-        // Try also spatialite geometry blobs
-        OGRGeometry *poGeomSpatialite = nullptr;
-        if (OGRSQLiteImportSpatiaLiteGeometry(pabyBLOB, nBLOBLen,
-                                              &poGeomSpatialite) != OGRERR_NONE)
+        std::vector<GByte> &abyNewBLOB = poDS->m_abyWKBTransformCache;
+        abyNewBLOB.resize(nBLOBLen);
+        memcpy(abyNewBLOB.data(), pabyBLOB, nBLOBLen);
+
+        OGREnvelope3D oEnv3d;
+        if (!OGRWKBTransform(abyNewBLOB.data() + sHeader.nHeaderLen,
+                             nBLOBLen - sHeader.nHeaderLen, poCT,
+                             poDS->m_oWKBTransformCache, oEnv3d) ||
+            !GPkgUpdateHeader(abyNewBLOB.data(), nBLOBLen, nDestSRID,
+                              oEnv3d.MinX, oEnv3d.MaxX, oEnv3d.MinY,
+                              oEnv3d.MaxY, oEnv3d.MinZ, oEnv3d.MaxZ))
         {
             CPLError(CE_Failure, CPLE_AppDefined, "Invalid geometry");
             sqlite3_result_blob(pContext, nullptr, 0, nullptr);
             return;
         }
-        poGeom.reset(poGeomSpatialite);
+
+        sqlite3_result_blob(pContext, abyNewBLOB.data(), nBLOBLen,
+                            SQLITE_TRANSIENT);
+        return;
     }
+
+    // Try also spatialite geometry blobs
+    OGRGeometry *poGeomSpatialite = nullptr;
+    if (OGRSQLiteImportSpatiaLiteGeometry(pabyBLOB, nBLOBLen,
+                                          &poGeomSpatialite) != OGRERR_NONE)
+    {
+        CPLError(CE_Failure, CPLE_AppDefined, "Invalid geometry");
+        sqlite3_result_blob(pContext, nullptr, 0, nullptr);
+        return;
+    }
+    auto poGeom = std::unique_ptr<OGRGeometry>(poGeomSpatialite);
 
     if (poGeom->transform(poCT) != OGRERR_NONE)
     {
@@ -9129,8 +9203,8 @@ static CPLString GPKG_GDAL_GetMemFileFromBlob(sqlite3_value **argv)
     int nBytes = sqlite3_value_bytes(argv[0]);
     const GByte *pabyBLOB =
         reinterpret_cast<const GByte *>(sqlite3_value_blob(argv[0]));
-    CPLString osMemFileName;
-    osMemFileName.Printf("/vsimem/GPKG_GDAL_GetMemFileFromBlob_%p", argv);
+    const CPLString osMemFileName(
+        VSIMemGenerateHiddenFilename("GPKG_GDAL_GetMemFileFromBlob"));
     VSILFILE *fp = VSIFileFromMemBuffer(
         osMemFileName.c_str(), const_cast<GByte *>(pabyBLOB), nBytes, FALSE);
     VSIFCloseL(fp);
@@ -9451,6 +9525,13 @@ void GDALGeoPackageDataset::InstallSQLFunctions()
         sqlite3_create_function(hDB, "ST_MakeValid", 1, UTF8_INNOCUOUS, nullptr,
                                 OGRGeoPackageSTMakeValid, nullptr, nullptr);
     }
+
+    sqlite3_create_function(hDB, "ST_Length", 1, UTF8_INNOCUOUS, nullptr,
+                            OGRGeoPackageLengthOrGeodesicLength, nullptr,
+                            nullptr);
+    sqlite3_create_function(hDB, "ST_Length", 2, UTF8_INNOCUOUS, this,
+                            OGRGeoPackageLengthOrGeodesicLength, nullptr,
+                            nullptr);
 
     sqlite3_create_function(hDB, "ST_Area", 1, UTF8_INNOCUOUS, nullptr,
                             OGRGeoPackageSTArea, nullptr, nullptr);

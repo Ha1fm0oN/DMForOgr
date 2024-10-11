@@ -8,23 +8,7 @@
  * Copyright (c) 1998, 2002, Frank Warmerdam <warmerdam@pobox.com>
  * Copyright (c) 2007-2015, Even Rouault <even dot rouault at spatialys dot com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "cpl_port.h"  // Must be first.
@@ -40,6 +24,7 @@
 #include "tif_jxl.h"
 #include "xtiffio.h"
 #include <cctype>
+#include <cmath>
 
 // Needed to expose WEBP_LOSSLESS option
 #ifdef WEBP_SUPPORT
@@ -580,10 +565,10 @@ char **GTiffDatasetReadRPCTag(TIFF *hTIFF)
 CPLString GTiffFormatGDALNoDataTagValue(double dfNoData)
 {
     CPLString osVal;
-    if (CPLIsNan(dfNoData))
+    if (std::isnan(dfNoData))
         osVal = "nan";
     else
-        osVal.Printf("%.18g", dfNoData);
+        osVal.Printf("%.17g", dfNoData);
     return osVal;
 }
 
@@ -700,8 +685,8 @@ void GTiffWriteJPEGTables(TIFF *hTIFF, const char *pszPhotometric,
     if (!TIFFGetField(hTIFF, TIFFTAG_BITSPERSAMPLE, &(l_nBitsPerSample)))
         l_nBitsPerSample = 1;
 
-    CPLString osTmpFilenameIn;
-    osTmpFilenameIn.Printf("%s%p", szJPEGGTiffDatasetTmpPrefix, hTIFF);
+    const CPLString osTmpFilenameIn(
+        VSIMemGenerateHiddenFilename("gtiffdataset_jpg_tmp"));
     VSILFILE *fpTmp = nullptr;
     CPLString osTmp;
     char **papszLocalParameters = nullptr;
@@ -722,6 +707,8 @@ void GTiffWriteJPEGTables(TIFF *hTIFF, const char *pszPhotometric,
                                            CPLSPrintf("%u", l_nBitsPerSample));
     papszLocalParameters = CSLSetNameValue(papszLocalParameters,
                                            "JPEGTABLESMODE", pszJPEGTablesMode);
+    papszLocalParameters =
+        CSLSetNameValue(papszLocalParameters, "WRITE_JPEGTABLE_TAG", "NO");
 
     TIFF *hTIFFTmp =
         GTiffDataset::CreateLL(osTmpFilenameIn, nInMemImageWidth,

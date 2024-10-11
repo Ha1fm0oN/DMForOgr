@@ -8,23 +8,7 @@
  * Copyright (c) 2004, Frank Warmerdam <warmerdam@pobox.com>
  * Copyright (c) 2008-2014, Even Rouault <even dot rouault at spatialys.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "cpl_port.h"
@@ -119,7 +103,7 @@ bool OGRCSVLayer::Matches(const char *pszFieldName, char **papszPossibleNames)
                 {
                     // *pattern*
                     CPLString oPattern(pszPattern + 1);
-                    oPattern.resize(oPattern.size() - 1);
+                    oPattern.pop_back();
                     if (CPLString(pszFieldName).ifind(oPattern) !=
                         std::string::npos)
                         return true;
@@ -960,7 +944,7 @@ char **OGRCSVLayer::AutodetectFieldTypes(CSLConstList papszOpenOptions,
         nRead = VSIFReadL(pszData, 1, nRequested, fpCSV);
         pszData[nRead] = 0;
 
-        osTmpMemFile = CPLSPrintf("/vsimem/tmp%p", this);
+        osTmpMemFile = VSIMemGenerateHiddenFilename("temp.csv");
         fp = VSIFileFromMemBuffer(osTmpMemFile.c_str(),
                                   reinterpret_cast<GByte *>(pszData), nRead,
                                   FALSE);
@@ -2434,7 +2418,9 @@ OGRErr OGRCSVLayer::ICreateFeature(OGRFeature *poNewFeature)
                     pszContent, -1,
                     (m_eStringQuoting == StringQuoting::ALWAYS ||
                      (m_eStringQuoting == StringQuoting::IF_AMBIGUOUS &&
-                      CPLGetValueType(pszContent) != CPL_VALUE_STRING))
+                      (CPLGetValueType(pszContent) != CPL_VALUE_STRING ||
+                       (pszContent[0] == DIGIT_ZERO && pszContent[1] != '\0' &&
+                        pszContent[1] != '.'))))
                         ? CPLES_CSV_FORCE_QUOTING
                         : CPLES_CSV);
             }

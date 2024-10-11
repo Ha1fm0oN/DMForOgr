@@ -7,23 +7,7 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (c) 2006, Mateusz Loskot <mateusz@loskot.net>
 /*
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "gdal_unit_test.h"
@@ -260,12 +244,74 @@ TEST_F(test_gdal, GDALDataTypeUnion_special_cases)
                                false /* complex */),
               GDT_Int64);
 
-    EXPECT_EQ(GDALDataTypeUnionWithValue(GDT_Byte, -128, 0), GDT_Int16);
-    EXPECT_EQ(GDALDataTypeUnionWithValue(GDT_Byte, -32768, 0), GDT_Int16);
-    EXPECT_EQ(GDALDataTypeUnionWithValue(GDT_Byte, -32769, 0), GDT_Int32);
-    EXPECT_EQ(GDALDataTypeUnionWithValue(GDT_Float32, -99999, 0), GDT_Float32);
-    EXPECT_EQ(GDALDataTypeUnionWithValue(GDT_Float32, -99999.9876, 0),
+    EXPECT_EQ(GDALDataTypeUnionWithValue(GDT_Byte, -128, false), GDT_Int16);
+    EXPECT_EQ(GDALDataTypeUnionWithValue(GDT_Byte, -32768, false), GDT_Int16);
+    EXPECT_EQ(GDALDataTypeUnionWithValue(GDT_Byte, -32769, false), GDT_Int32);
+
+    EXPECT_EQ(GDALDataTypeUnionWithValue(GDT_Int8, 127, false), GDT_Int8);
+    EXPECT_EQ(GDALDataTypeUnionWithValue(GDT_Int8, 128, false), GDT_Int16);
+
+    EXPECT_EQ(GDALDataTypeUnionWithValue(GDT_Int16, 32767, false), GDT_Int16);
+    EXPECT_EQ(GDALDataTypeUnionWithValue(GDT_Int16, 32768, false), GDT_Int32);
+
+    EXPECT_EQ(GDALDataTypeUnionWithValue(GDT_UInt16, 65535, false), GDT_UInt16);
+    EXPECT_EQ(GDALDataTypeUnionWithValue(GDT_UInt16, 65536, false), GDT_UInt32);
+
+    EXPECT_EQ(GDALDataTypeUnionWithValue(GDT_Int32, INT32_MAX, false),
+              GDT_Int32);
+    EXPECT_EQ(GDALDataTypeUnionWithValue(GDT_Int32, INT32_MAX + 1.0, false),
+              GDT_Int64);
+
+    EXPECT_EQ(GDALDataTypeUnionWithValue(GDT_UInt32, UINT32_MAX, false),
+              GDT_UInt32);
+    EXPECT_EQ(GDALDataTypeUnionWithValue(GDT_UInt32, UINT32_MAX + 1.0, false),
+              GDT_UInt64);
+
+    // (1 << 63) - 1024
+    EXPECT_EQ(
+        GDALDataTypeUnionWithValue(GDT_Int64, 9223372036854774784.0, false),
+        GDT_Int64);
+    // (1 << 63) - 512
+    EXPECT_EQ(
+        GDALDataTypeUnionWithValue(GDT_Int64, 9223372036854775296.0, false),
+        GDT_Float64);
+
+    // (1 << 64) - 2048
+    EXPECT_EQ(
+        GDALDataTypeUnionWithValue(GDT_UInt64, 18446744073709549568.0, false),
+        GDT_UInt64);
+    // (1 << 64) + 4096
+    EXPECT_EQ(
+        GDALDataTypeUnionWithValue(GDT_UInt64, 18446744073709555712.0, false),
+        GDT_Float64);
+
+    EXPECT_EQ(GDALDataTypeUnionWithValue(GDT_Float32, -99999, false),
+              GDT_Float32);
+    EXPECT_EQ(GDALDataTypeUnionWithValue(GDT_Float32, -99999.9876, false),
               GDT_Float64);
+    EXPECT_EQ(GDALDataTypeUnionWithValue(
+                  GDT_Float32, std::numeric_limits<double>::quiet_NaN(), false),
+              GDT_Float32);
+    EXPECT_EQ(GDALDataTypeUnionWithValue(
+                  GDT_Float32, -std::numeric_limits<double>::infinity(), false),
+              GDT_Float32);
+    EXPECT_EQ(GDALDataTypeUnionWithValue(
+                  GDT_Float32, -std::numeric_limits<double>::infinity(), false),
+              GDT_Float32);
+
+    EXPECT_EQ(GDALDataTypeUnionWithValue(GDT_Float64, -99999.9876, false),
+              GDT_Float64);
+    EXPECT_EQ(GDALDataTypeUnionWithValue(
+                  GDT_Float64, std::numeric_limits<double>::quiet_NaN(), false),
+              GDT_Float64);
+    EXPECT_EQ(GDALDataTypeUnionWithValue(
+                  GDT_Float64, -std::numeric_limits<double>::infinity(), false),
+              GDT_Float64);
+    EXPECT_EQ(GDALDataTypeUnionWithValue(
+                  GDT_Float64, -std::numeric_limits<double>::infinity(), false),
+              GDT_Float64);
+
+    EXPECT_EQ(GDALDataTypeUnionWithValue(GDT_Unknown, 0, false), GDT_Byte);
 }
 
 // Test GDALAdjustValueToDataType()
@@ -568,6 +614,11 @@ TEST_F(test_gdal, GDALWarp_error_flush_cache)
 // source dataset when we want.
 TEST_F(test_gdal, GDALWarp_VRT)
 {
+    auto hDrv = GDALGetDriverByName("GTiff");
+    if (!hDrv)
+    {
+        GTEST_SKIP() << "GTiff driver missing";
+    }
     const char *args[] = {"-of", "VRT", nullptr};
     GDALWarpAppOptions *psOptions =
         GDALWarpAppOptionsNew((char **)args, nullptr);
@@ -584,6 +635,11 @@ TEST_F(test_gdal, GDALWarp_VRT)
 // source dataset when we want.
 TEST_F(test_gdal, GDALTranslate_VRT)
 {
+    auto hDrv = GDALGetDriverByName("GTiff");
+    if (!hDrv)
+    {
+        GTEST_SKIP() << "GTiff driver missing";
+    }
     const char *args[] = {"-of", "VRT", nullptr};
     GDALTranslateOptions *psOptions =
         GDALTranslateOptionsNew((char **)args, nullptr);
@@ -600,6 +656,11 @@ TEST_F(test_gdal, GDALTranslate_VRT)
 // source dataset when we want.
 TEST_F(test_gdal, GDALBuildVRT)
 {
+    auto hDrv = GDALGetDriverByName("GTiff");
+    if (!hDrv)
+    {
+        GTEST_SKIP() << "GTiff driver missing";
+    }
     GDALDatasetH hSrcDS = GDALOpen(GCORE_DATA_DIR "byte.tif", GA_ReadOnly);
     GDALDatasetH hOutDS =
         GDALBuildVRT("", 1, &hSrcDS, nullptr, nullptr, nullptr);
@@ -805,6 +866,106 @@ TEST_F(test_gdal, GDALIsValueExactAs)
     EXPECT_TRUE(GDALIsValueExactAs<double>(std::numeric_limits<double>::max()));
     EXPECT_TRUE(
         GDALIsValueExactAs<double>(std::numeric_limits<double>::quiet_NaN()));
+}
+
+// Test GDALIsValueExactAs()
+TEST_F(test_gdal, GDALIsValueExactAs_C_func)
+{
+    EXPECT_TRUE(GDALIsValueExactAs(0, GDT_Byte));
+    EXPECT_TRUE(GDALIsValueExactAs(255, GDT_Byte));
+    EXPECT_FALSE(GDALIsValueExactAs(-1, GDT_Byte));
+    EXPECT_FALSE(GDALIsValueExactAs(256, GDT_Byte));
+    EXPECT_FALSE(GDALIsValueExactAs(0.5, GDT_Byte));
+
+    EXPECT_TRUE(GDALIsValueExactAs(-128, GDT_Int8));
+    EXPECT_TRUE(GDALIsValueExactAs(127, GDT_Int8));
+    EXPECT_FALSE(GDALIsValueExactAs(-129, GDT_Int8));
+    EXPECT_FALSE(GDALIsValueExactAs(128, GDT_Int8));
+    EXPECT_FALSE(GDALIsValueExactAs(0.5, GDT_Int8));
+
+    EXPECT_TRUE(GDALIsValueExactAs(0, GDT_UInt16));
+    EXPECT_TRUE(GDALIsValueExactAs(65535, GDT_UInt16));
+    EXPECT_FALSE(GDALIsValueExactAs(-1, GDT_UInt16));
+    EXPECT_FALSE(GDALIsValueExactAs(65536, GDT_UInt16));
+    EXPECT_FALSE(GDALIsValueExactAs(0.5, GDT_UInt16));
+
+    EXPECT_TRUE(GDALIsValueExactAs(-32768, GDT_Int16));
+    EXPECT_TRUE(GDALIsValueExactAs(32767, GDT_Int16));
+    EXPECT_FALSE(GDALIsValueExactAs(-32769, GDT_Int16));
+    EXPECT_FALSE(GDALIsValueExactAs(32768, GDT_Int16));
+    EXPECT_FALSE(GDALIsValueExactAs(0.5, GDT_Int16));
+
+    EXPECT_TRUE(GDALIsValueExactAs(std::numeric_limits<uint32_t>::lowest(),
+                                   GDT_UInt32));
+    EXPECT_TRUE(
+        GDALIsValueExactAs(std::numeric_limits<uint32_t>::max(), GDT_UInt32));
+    EXPECT_FALSE(GDALIsValueExactAs(
+        std::numeric_limits<uint32_t>::lowest() - 1.0, GDT_UInt32));
+    EXPECT_FALSE(GDALIsValueExactAs(std::numeric_limits<uint32_t>::max() + 1.0,
+                                    GDT_UInt32));
+    EXPECT_FALSE(GDALIsValueExactAs(0.5, GDT_UInt32));
+
+    EXPECT_TRUE(
+        GDALIsValueExactAs(std::numeric_limits<int32_t>::lowest(), GDT_Int32));
+    EXPECT_TRUE(
+        GDALIsValueExactAs(std::numeric_limits<int32_t>::max(), GDT_Int32));
+    EXPECT_FALSE(GDALIsValueExactAs(
+        std::numeric_limits<int32_t>::lowest() - 1.0, GDT_Int32));
+    EXPECT_FALSE(GDALIsValueExactAs(std::numeric_limits<int32_t>::max() + 1.0,
+                                    GDT_Int32));
+    EXPECT_FALSE(GDALIsValueExactAs(0.5, GDT_Int32));
+
+    EXPECT_TRUE(GDALIsValueExactAs(
+        static_cast<double>(std::numeric_limits<uint64_t>::lowest()),
+        GDT_UInt64));
+    // (1 << 64) - 2048
+    EXPECT_TRUE(GDALIsValueExactAs(18446744073709549568.0, GDT_UInt64));
+    EXPECT_FALSE(GDALIsValueExactAs(
+        static_cast<double>(std::numeric_limits<uint64_t>::lowest()) - 1.0,
+        GDT_UInt64));
+    // (1 << 64)
+    EXPECT_FALSE(GDALIsValueExactAs(18446744073709551616.0, GDT_UInt64));
+    EXPECT_FALSE(GDALIsValueExactAs(0.5, GDT_UInt64));
+
+    EXPECT_TRUE(GDALIsValueExactAs(
+        static_cast<double>(std::numeric_limits<int64_t>::lowest()),
+        GDT_Int64));
+    // (1 << 63) - 1024
+    EXPECT_TRUE(GDALIsValueExactAs(9223372036854774784.0, GDT_Int64));
+    EXPECT_FALSE(GDALIsValueExactAs(
+        static_cast<double>(std::numeric_limits<int64_t>::lowest()) - 2048.0,
+        GDT_Int64));
+    // (1 << 63) - 512
+    EXPECT_FALSE(GDALIsValueExactAs(9223372036854775296.0, GDT_Int64));
+    EXPECT_FALSE(GDALIsValueExactAs(0.5, GDT_Int64));
+
+    EXPECT_TRUE(
+        GDALIsValueExactAs(-std::numeric_limits<float>::max(), GDT_Float32));
+    EXPECT_TRUE(
+        GDALIsValueExactAs(std::numeric_limits<float>::max(), GDT_Float32));
+    EXPECT_TRUE(GDALIsValueExactAs(-std::numeric_limits<float>::infinity(),
+                                   GDT_Float32));
+    EXPECT_TRUE(GDALIsValueExactAs(std::numeric_limits<float>::infinity(),
+                                   GDT_Float32));
+    EXPECT_TRUE(GDALIsValueExactAs(std::numeric_limits<double>::quiet_NaN(),
+                                   GDT_Float32));
+    EXPECT_TRUE(
+        !GDALIsValueExactAs(-std::numeric_limits<double>::max(), GDT_Float32));
+    EXPECT_TRUE(
+        !GDALIsValueExactAs(std::numeric_limits<double>::max(), GDT_Float32));
+
+    EXPECT_TRUE(GDALIsValueExactAs(-std::numeric_limits<double>::infinity(),
+                                   GDT_Float64));
+    EXPECT_TRUE(GDALIsValueExactAs(std::numeric_limits<double>::infinity(),
+                                   GDT_Float64));
+    EXPECT_TRUE(
+        GDALIsValueExactAs(-std::numeric_limits<double>::max(), GDT_Float64));
+    EXPECT_TRUE(
+        GDALIsValueExactAs(std::numeric_limits<double>::max(), GDT_Float64));
+    EXPECT_TRUE(GDALIsValueExactAs(std::numeric_limits<double>::quiet_NaN(),
+                                   GDT_Float64));
+
+    EXPECT_TRUE(GDALIsValueExactAs(0, GDT_CInt16));
 }
 
 #ifdef _MSC_VER
@@ -2842,10 +3003,15 @@ TEST_F(test_gdal, MarkSuppressOnClose)
 {
     const char *pszFilename = "/vsimem/out.tif";
     const char *const apszOptions[] = {"PROFILE=BASELINE", nullptr};
+    auto hDrv = GDALGetDriverByName("GTiff");
+    if (!hDrv)
     {
-        GDALDatasetUniquePtr poDstDS(
-            GDALDriver::FromHandle(GDALGetDriverByName("GTiff"))
-                ->Create(pszFilename, 1, 1, 1, GDT_Byte, apszOptions));
+        GTEST_SKIP() << "GTiff driver missing";
+    }
+    else
+    {
+        GDALDatasetUniquePtr poDstDS(GDALDriver::FromHandle(hDrv)->Create(
+            pszFilename, 1, 1, 1, GDT_Byte, apszOptions));
         poDstDS->SetMetadataItem("FOO", "BAR");
         poDstDS->MarkSuppressOnClose();
         poDstDS->GetRasterBand(1)->Fill(255);
@@ -2869,10 +3035,15 @@ TEST_F(test_gdal, UnMarkSuppressOnClose)
 {
     const char *pszFilename = "/vsimem/out.tif";
     const char *const apszOptions[] = {"PROFILE=BASELINE", nullptr};
+    auto hDrv = GDALGetDriverByName("GTiff");
+    if (!hDrv)
     {
-        GDALDatasetUniquePtr poDstDS(
-            GDALDriver::FromHandle(GDALGetDriverByName("GTiff"))
-                ->Create(pszFilename, 1, 1, 1, GDT_Byte, apszOptions));
+        GTEST_SKIP() << "GTiff driver missing";
+    }
+    else
+    {
+        GDALDatasetUniquePtr poDstDS(GDALDriver::FromHandle(hDrv)->Create(
+            pszFilename, 1, 1, 1, GDT_Byte, apszOptions));
         poDstDS->MarkSuppressOnClose();
         poDstDS->GetRasterBand(1)->Fill(255);
         if (poDstDS->IsMarkedSuppressOnClose())
@@ -2952,6 +3123,12 @@ TEST_F(test_gdal, GDALCachedPixelAccessor)
 // (https://github.com/OSGeo/gdal/issues/5989)
 TEST_F(test_gdal, VRTCachingOpenOptions)
 {
+    if (GDALGetMetadataItem(GDALGetDriverByName("VRT"), GDAL_DMD_OPENOPTIONLIST,
+                            nullptr) == nullptr)
+    {
+        GTEST_SKIP() << "VRT driver Open() missing";
+    }
+
     class TestRasterBand : public GDALRasterBand
     {
       protected:
@@ -3278,6 +3455,10 @@ TEST_F(test_gdal, GDALDatasetReportError)
 // Test GDALDataset::GetCompressionFormats() and ReadCompressedData()
 TEST_F(test_gdal, gtiff_ReadCompressedData)
 {
+    if (!GDALGetDriverByName("GTiff"))
+    {
+        GTEST_SKIP() << "GTiff driver missing";
+    }
     if (GDALGetDriverByName("JPEG") == nullptr)
     {
         GTEST_SKIP() << "JPEG support missing";
@@ -3439,6 +3620,10 @@ TEST_F(test_gdal, gtiff_ReadCompressedData)
 // Test GDALDataset::GetCompressionFormats() and ReadCompressedData()
 TEST_F(test_gdal, gtiff_ReadCompressedData_jpeg_rgba)
 {
+    if (!GDALGetDriverByName("GTiff"))
+    {
+        GTEST_SKIP() << "GTiff driver missing";
+    }
     if (GDALGetDriverByName("JPEG") == nullptr)
     {
         GTEST_SKIP() << "JPEG support missing";
@@ -3779,6 +3964,11 @@ TEST_F(test_gdal, jpegxl_jpeg_compatible_ReadCompressedData)
 // Test GDAL_OF_SHARED flag and open options
 TEST_F(test_gdal, open_shared_open_options)
 {
+    if (!GDALGetDriverByName("GTiff"))
+    {
+        GTEST_SKIP() << "GTiff driver missing";
+    }
+
     CPLErrorReset();
     const char *const apszOpenOptions[] = {"OVERVIEW_LEVEL=NONE", nullptr};
     {

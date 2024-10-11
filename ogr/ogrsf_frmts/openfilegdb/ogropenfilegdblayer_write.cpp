@@ -7,23 +7,7 @@
  ******************************************************************************
  * Copyright (c) 2022, Even Rouault <even dot rouault at spatialys.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "cpl_port.h"
@@ -208,34 +192,34 @@ static void XMLSerializeGeomFieldBase(CPLXMLNode *psRoot,
     }
     CPLCreateXMLElementAndValue(
         psSpatialReference, "XOrigin",
-        CPLSPrintf("%.18g", poGeomFieldDefn->GetXOrigin()));
+        CPLSPrintf("%.17g", poGeomFieldDefn->GetXOrigin()));
     CPLCreateXMLElementAndValue(
         psSpatialReference, "YOrigin",
-        CPLSPrintf("%.18g", poGeomFieldDefn->GetYOrigin()));
+        CPLSPrintf("%.17g", poGeomFieldDefn->GetYOrigin()));
     CPLCreateXMLElementAndValue(
         psSpatialReference, "XYScale",
-        CPLSPrintf("%.18g", poGeomFieldDefn->GetXYScale()));
+        CPLSPrintf("%.17g", poGeomFieldDefn->GetXYScale()));
     CPLCreateXMLElementAndValue(
         psSpatialReference, "ZOrigin",
-        CPLSPrintf("%.18g", poGeomFieldDefn->GetZOrigin()));
+        CPLSPrintf("%.17g", poGeomFieldDefn->GetZOrigin()));
     CPLCreateXMLElementAndValue(
         psSpatialReference, "ZScale",
-        CPLSPrintf("%.18g", poGeomFieldDefn->GetZScale()));
+        CPLSPrintf("%.17g", poGeomFieldDefn->GetZScale()));
     CPLCreateXMLElementAndValue(
         psSpatialReference, "MOrigin",
-        CPLSPrintf("%.18g", poGeomFieldDefn->GetMOrigin()));
+        CPLSPrintf("%.17g", poGeomFieldDefn->GetMOrigin()));
     CPLCreateXMLElementAndValue(
         psSpatialReference, "MScale",
-        CPLSPrintf("%.18g", poGeomFieldDefn->GetMScale()));
+        CPLSPrintf("%.17g", poGeomFieldDefn->GetMScale()));
     CPLCreateXMLElementAndValue(
         psSpatialReference, "XYTolerance",
-        CPLSPrintf("%.18g", poGeomFieldDefn->GetXYTolerance()));
+        CPLSPrintf("%.17g", poGeomFieldDefn->GetXYTolerance()));
     CPLCreateXMLElementAndValue(
         psSpatialReference, "ZTolerance",
-        CPLSPrintf("%.18g", poGeomFieldDefn->GetZTolerance()));
+        CPLSPrintf("%.17g", poGeomFieldDefn->GetZTolerance()));
     CPLCreateXMLElementAndValue(
         psSpatialReference, "MTolerance",
-        CPLSPrintf("%.18g", poGeomFieldDefn->GetMTolerance()));
+        CPLSPrintf("%.17g", poGeomFieldDefn->GetMTolerance()));
     CPLCreateXMLElementAndValue(psSpatialReference, "HighPrecision", "true");
     if (poSRS)
     {
@@ -824,7 +808,7 @@ static CPLXMLNode *CreateXMLFieldDefinition(const OGRFieldDefn *poFieldDefn,
         {
             auto psDefaultValue = CPLCreateXMLElementAndValue(
                 GPFieldInfoEx, "DefaultValueNumeric",
-                CPLSPrintf("%.18g", psDefault->Real));
+                CPLSPrintf("%.17g", psDefault->Real));
             if (!bArcGISPro32OrLater)
             {
                 CPLAddXMLAttributeAndValue(
@@ -843,7 +827,7 @@ static CPLXMLNode *CreateXMLFieldDefinition(const OGRFieldDefn *poFieldDefn,
         {
             CPLCreateXMLElementAndValue(
                 GPFieldInfoEx, "DefaultValueNumeric",
-                CPLSPrintf("%.18g", FileGDBOGRDateToDoubleDate(
+                CPLSPrintf("%.17g", FileGDBOGRDateToDoubleDate(
                                         psDefault, /* bConvertToUTC = */ true,
                                         poGDBFieldDefn->IsHighPrecision())));
         }
@@ -1007,7 +991,7 @@ static bool GetDefault(const OGRFieldDefn *poField, FileGDBFieldType eType,
             if (osDefaultVal[0] == '\'' && osDefaultVal.back() == '\'')
             {
                 osDefaultVal = osDefaultVal.substr(1);
-                osDefaultVal.resize(osDefaultVal.size() - 1);
+                osDefaultVal.pop_back();
                 char *pszTmp =
                     CPLUnescapeString(osDefaultVal.c_str(), nullptr, CPLES_SQL);
                 osDefaultVal = pszTmp;
@@ -1036,7 +1020,7 @@ static bool GetDefault(const OGRFieldDefn *poField, FileGDBFieldType eType,
             if (osDefaultVal[0] == '\'' && osDefaultVal.back() == '\'')
             {
                 osDefaultVal = osDefaultVal.substr(1);
-                osDefaultVal.resize(osDefaultVal.size() - 1);
+                osDefaultVal.pop_back();
                 char *pszTmp =
                     CPLUnescapeString(osDefaultVal.c_str(), nullptr, CPLES_SQL);
                 osDefaultVal = pszTmp;

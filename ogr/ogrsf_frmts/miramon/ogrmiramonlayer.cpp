@@ -6,23 +6,7 @@
  ******************************************************************************
  * Copyright (c) 2024, Xavier Pons
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 #include "ogrmiramon.h"
 
@@ -527,6 +511,9 @@ OGRMiraMonLayer::~OGRMiraMonLayer()
         if (MMCloseLayer(&hMiraMonLayerPOL))
         {
             CPLDebugOnly("MiraMon", "Error closing polygons layer");
+
+            // In case of closing we need to destroy memory
+            MMDestroyLayer(&hMiraMonLayerPOL);
         }
         if (hMiraMonLayerPOL.TopHeader.nElemCount)
         {
@@ -548,6 +535,9 @@ OGRMiraMonLayer::~OGRMiraMonLayer()
         if (MMCloseLayer(&hMiraMonLayerARC))
         {
             CPLDebugOnly("MiraMon", "Error closing arcs layer");
+
+            // In case of closing we need to destroy memory
+            MMDestroyLayer(&hMiraMonLayerARC);
         }
         if (hMiraMonLayerARC.TopHeader.nElemCount)
         {
@@ -570,6 +560,9 @@ OGRMiraMonLayer::~OGRMiraMonLayer()
         if (MMCloseLayer(&hMiraMonLayerPNT))
         {
             CPLDebugOnly("MiraMon", "Error closing points layer");
+
+            // In case of closing we need to destroy memory
+            MMDestroyLayer(&hMiraMonLayerPNT);
         }
         if (hMiraMonLayerPNT.TopHeader.nElemCount)
         {
@@ -593,7 +586,11 @@ OGRMiraMonLayer::~OGRMiraMonLayer()
             {
                 CPLDebugOnly("MiraMon", "Closing MiraMon DBF table ...");
             }
-            MMCloseLayer(&hMiraMonLayerReadOrNonGeom);
+            if (MMCloseLayer(&hMiraMonLayerReadOrNonGeom))
+            {
+                // In case of closing we need to destroy memory
+                MMDestroyLayer(&hMiraMonLayerReadOrNonGeom);
+            }
             if (hMiraMonLayerReadOrNonGeom.ReadOrWrite == MM_WRITING_MODE)
             {
                 CPLDebugOnly("MiraMon", "MiraMon DBF table closed");
@@ -610,7 +607,11 @@ OGRMiraMonLayer::~OGRMiraMonLayer()
         {
             CPLDebugOnly("MiraMon", "Closing MiraMon layer ...");
         }
-        MMCloseLayer(&hMiraMonLayerReadOrNonGeom);
+        if (MMCloseLayer(&hMiraMonLayerReadOrNonGeom))
+        {
+            // In case of closing we need to destroy memory
+            MMDestroyLayer(&hMiraMonLayerReadOrNonGeom);
+        }
         if (hMiraMonLayerReadOrNonGeom.ReadOrWrite == MM_WRITING_MODE)
         {
             CPLDebugOnly("MiraMon", "MiraMon layer closed");

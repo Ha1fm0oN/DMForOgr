@@ -8,23 +8,7 @@
  * Copyright (c) 1999, Frank Warmerdam
  * Copyright (c) 2008-2013, Even Rouault <even dot rouault at spatialys.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "cpl_port.h"
@@ -439,7 +423,8 @@ OGRErr OGRGeometryCollection::addGeometry(std::unique_ptr<OGRGeometry> geom)
  *
  * @param bDelete if TRUE the geometry will be deallocated, otherwise it will
  * not.  The default is TRUE as the container is considered to own the
- * geometries in it.
+ * geometries in it. Note: using stealGeometry() might be a better alternative
+ * to using bDelete = false.
  *
  * @return OGRERR_NONE if successful, or OGRERR_FAILURE if the index is
  * out of range.
@@ -468,6 +453,35 @@ OGRErr OGRGeometryCollection::removeGeometry(int iGeom, int bDelete)
     nGeomCount--;
 
     return OGRERR_NONE;
+}
+
+/************************************************************************/
+/*                           stealGeometry()                            */
+/************************************************************************/
+
+/**
+ * \brief Remove a geometry from the container and return it to the caller
+ *
+ * Removing a geometry will cause the geometry count to drop by one, and all
+ * "higher" geometries will shuffle down one in index.
+ *
+ * There is no SFCOM analog to this method.
+ *
+ * @param iGeom the index of the geometry to delete.
+ *
+ * @return the sub-geometry, or nullptr in case of error.
+ * @since 3.10
+ */
+
+std::unique_ptr<OGRGeometry> OGRGeometryCollection::stealGeometry(int iGeom)
+{
+    if (iGeom < 0 || iGeom >= nGeomCount)
+        return nullptr;
+
+    auto poSubGeom = std::unique_ptr<OGRGeometry>(papoGeoms[iGeom]);
+    papoGeoms[iGeom] = nullptr;
+    removeGeometry(iGeom);
+    return poSubGeom;
 }
 
 /************************************************************************/
@@ -1162,8 +1176,12 @@ double OGRGeometryCollection::get_Length() const
             const OGRCurve *poCurve = poSubGeom->toCurve();
             dfLength += poCurve->get_Length();
         }
-        else if (OGR_GT_IsSubClassOf(eType, wkbMultiCurve) ||
-                 eType == wkbGeometryCollection)
+        else if (OGR_GT_IsSurface(eType))
+        {
+            const OGRSurface *poSurface = poSubGeom->toSurface();
+            dfLength += poSurface->get_Length();
+        }
+        else if (OGR_GT_IsSubClassOf(eType, wkbGeometryCollection))
         {
             const OGRGeometryCollection *poColl =
                 poSubGeom->toGeometryCollection();
@@ -1227,6 +1245,9 @@ double OGRGeometryCollection::get_Area() const
  * The returned area will always be in square meters, and assumes that
  * polygon edges describe geodesic lines on the ellipsoid.
  *
+ * <a href="https://geographiclib.sourceforge.io/html/python/geodesics.html">Geodesics</a>
+ * follow the shortest route on the surface of the ellipsoid.
+ *
  * If the geometry' SRS is not a geographic one, geometries are reprojected to
  * the underlying geographic SRS of the geometry' SRS.
  * OGRSpatialReference::GetDataAxisToSRSAxisMapping() is honored.
@@ -1249,9 +1270,6 @@ double OGRGeometryCollection::get_Area() const
 double OGRGeometryCollection::get_GeodesicArea(
     const OGRSpatialReference *poSRSOverride) const
 {
-    if (!poSRSOverride)
-        poSRSOverride = getSpatialReference();
-
     double dfArea = 0.0;
     for (const auto &poSubGeom : *this)
     {
@@ -1273,8 +1291,7 @@ double OGRGeometryCollection::get_GeodesicArea(
                 return dfLocalArea;
             dfArea += dfLocalArea;
         }
-        else if (OGR_GT_IsSubClassOf(eType, wkbMultiSurface) ||
-                 eType == wkbGeometryCollection)
+        else if (OGR_GT_IsSubClassOf(eType, wkbGeometryCollection))
         {
             const double dfLocalArea =
                 poSubGeom->toGeometryCollection()->get_GeodesicArea(
@@ -1286,6 +1303,82 @@ double OGRGeometryCollection::get_GeodesicArea(
     }
 
     return dfArea;
+}
+
+/************************************************************************/
+/*                        get_GeodesicLength()                          */
+/************************************************************************/
+
+/**
+ * \brief Get the length of the collection,where curve edges are geodesic lines
+ * on the underlying ellipsoid of the SRS attached to the geometry.
+ *
+ * The returned length will always be in meters.
+ *
+ * <a href="https://geographiclib.sourceforge.io/html/python/geodesics.html">Geodesics</a>
+ * follow the shortest route on the surface of the ellipsoid.
+ *
+ * If the geometry' SRS is not a geographic one, geometries are reprojected to
+ * the underlying geographic SRS of the geometry' SRS.
+ * OGRSpatialReference::GetDataAxisToSRSAxisMapping() is honored.
+ *
+ * Note that geometries with circular arcs will be linearized in their original
+ * coordinate space first, so the resulting geodesic length will be an
+ * approximation.
+ *
+ * The length is computed as the sum of the lengths of all members
+ * in this collection.
+ *
+ * @note No warning will be issued if a member of the collection does not
+ *       support the get_GeodesicLength method.
+ *
+ * @param poSRSOverride If not null, overrides OGRGeometry::getSpatialReference()
+ * @return the length of the geometry in meters, or a negative value in case
+ * of error.
+ *
+ * @see get_Length() for an alternative method returning areas computed in
+ * 2D Cartesian space.
+ *
+ * @since GDAL 3.10
+ */
+double OGRGeometryCollection::get_GeodesicLength(
+    const OGRSpatialReference *poSRSOverride) const
+{
+    double dfLength = 0.0;
+    for (const auto &poSubGeom : *this)
+    {
+        const OGRwkbGeometryType eType =
+            wkbFlatten(poSubGeom->getGeometryType());
+        if (OGR_GT_IsSurface(eType))
+        {
+            const OGRSurface *poSurface = poSubGeom->toSurface();
+            const double dfLocalLength =
+                poSurface->get_GeodesicLength(poSRSOverride);
+            if (dfLocalLength < 0)
+                return dfLocalLength;
+            dfLength += dfLocalLength;
+        }
+        else if (OGR_GT_IsCurve(eType))
+        {
+            const OGRCurve *poCurve = poSubGeom->toCurve();
+            const double dfLocalLength =
+                poCurve->get_GeodesicLength(poSRSOverride);
+            if (dfLocalLength < 0)
+                return dfLocalLength;
+            dfLength += dfLocalLength;
+        }
+        else if (OGR_GT_IsSubClassOf(eType, wkbGeometryCollection))
+        {
+            const double dfLocalLength =
+                poSubGeom->toGeometryCollection()->get_GeodesicLength(
+                    poSRSOverride);
+            if (dfLocalLength < 0)
+                return dfLocalLength;
+            dfLength += dfLocalLength;
+        }
+    }
+
+    return dfLength;
 }
 
 /************************************************************************/

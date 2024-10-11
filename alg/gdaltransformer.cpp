@@ -11,23 +11,7 @@
  * Copyright (c) 2008-2013, Even Rouault <even dot rouault at spatialys.com>
  * Copyright (c) 2021, CLS
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "cpl_port.h"
@@ -3091,14 +3075,14 @@ static CPLXMLNode *GDALSerializeGenImgProjTransformer(void *pTransformArg)
     else
     {
         CPLsnprintf(
-            szWork, sizeof(szWork), "%.18g,%.18g,%.18g,%.18g,%.18g,%.18g",
+            szWork, sizeof(szWork), "%.17g,%.17g,%.17g,%.17g,%.17g,%.17g",
             psInfo->adfSrcGeoTransform[0], psInfo->adfSrcGeoTransform[1],
             psInfo->adfSrcGeoTransform[2], psInfo->adfSrcGeoTransform[3],
             psInfo->adfSrcGeoTransform[4], psInfo->adfSrcGeoTransform[5]);
         CPLCreateXMLElementAndValue(psTree, "SrcGeoTransform", szWork);
 
         CPLsnprintf(
-            szWork, sizeof(szWork), "%.18g,%.18g,%.18g,%.18g,%.18g,%.18g",
+            szWork, sizeof(szWork), "%.17g,%.17g,%.17g,%.17g,%.17g,%.17g",
             psInfo->adfSrcInvGeoTransform[0], psInfo->adfSrcInvGeoTransform[1],
             psInfo->adfSrcInvGeoTransform[2], psInfo->adfSrcInvGeoTransform[3],
             psInfo->adfSrcInvGeoTransform[4], psInfo->adfSrcInvGeoTransform[5]);
@@ -3128,14 +3112,14 @@ static CPLXMLNode *GDALSerializeGenImgProjTransformer(void *pTransformArg)
     else
     {
         CPLsnprintf(
-            szWork, sizeof(szWork), "%.18g,%.18g,%.18g,%.18g,%.18g,%.18g",
+            szWork, sizeof(szWork), "%.17g,%.17g,%.17g,%.17g,%.17g,%.17g",
             psInfo->adfDstGeoTransform[0], psInfo->adfDstGeoTransform[1],
             psInfo->adfDstGeoTransform[2], psInfo->adfDstGeoTransform[3],
             psInfo->adfDstGeoTransform[4], psInfo->adfDstGeoTransform[5]);
         CPLCreateXMLElementAndValue(psTree, "DstGeoTransform", szWork);
 
         CPLsnprintf(
-            szWork, sizeof(szWork), "%.18g,%.18g,%.18g,%.18g,%.18g,%.18g",
+            szWork, sizeof(szWork), "%.17g,%.17g,%.17g,%.17g,%.17g,%.17g",
             psInfo->adfDstInvGeoTransform[0], psInfo->adfDstInvGeoTransform[1],
             psInfo->adfDstInvGeoTransform[2], psInfo->adfDstInvGeoTransform[3],
             psInfo->adfDstInvGeoTransform[4], psInfo->adfDstInvGeoTransform[5]);
@@ -3828,7 +3812,8 @@ static CPLXMLNode *GDALSerializeApproxTransformer(void *pTransformArg)
  * @param pBaseTransformArg the callback argument for the high precision
  * transformer.
  * @param dfMaxError the maximum cartesian error in the "output" space that
- * is to be accepted in the linear approximation.
+ * is to be accepted in the linear approximation, evaluated as a Manhattan
+ * distance.
  *
  * @return callback pointer suitable for use with GDALApproxTransform().  It
  * should be deallocated with GDALDestroyApproxTransformer().
@@ -4917,4 +4902,43 @@ bool GDALTransformIsAffineNoRotation(GDALTransformerFunc, void *pTransformerArg)
                pGenImgpProjInfo->adfDstGeoTransform[4] == 0;
     }
     return false;
+}
+
+/************************************************************************/
+/*                        GDALTransformHasFastClone()                   */
+/************************************************************************/
+
+/** Returns whether GDALCloneTransformer() on this transformer is
+ * "fast"
+ * Counter-examples are GCPs or TPSs transformers.
+ */
+bool GDALTransformHasFastClone(void *pTransformerArg)
+{
+    if (GDALIsTransformer(pTransformerArg, GDAL_APPROX_TRANSFORMER_CLASS_NAME))
+    {
+        const auto *pApproxInfo =
+            static_cast<const ApproxTransformInfo *>(pTransformerArg);
+        pTransformerArg = pApproxInfo->pBaseCBData;
+        // Fallback to next lines
+    }
+
+    if (GDALIsTransformer(pTransformerArg, GDAL_GEN_IMG_TRANSFORMER_CLASS_NAME))
+    {
+        const auto *pGenImgpProjInfo =
+            static_cast<GDALGenImgProjTransformInfo *>(pTransformerArg);
+        return (pGenImgpProjInfo->pSrcTransformArg == nullptr ||
+                GDALTransformHasFastClone(
+                    pGenImgpProjInfo->pSrcTransformArg)) &&
+               (pGenImgpProjInfo->pDstTransformArg == nullptr ||
+                GDALTransformHasFastClone(pGenImgpProjInfo->pDstTransformArg));
+    }
+    else if (GDALIsTransformer(pTransformerArg,
+                               GDAL_RPC_TRANSFORMER_CLASS_NAME))
+    {
+        return true;
+    }
+    else
+    {
+        return false;
+    }
 }

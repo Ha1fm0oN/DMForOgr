@@ -9,23 +9,7 @@
  ******************************************************************************
  * Copyright (c) 2019, Even Rouault <even.rouault at spatialys.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include <assert.h>
@@ -36,6 +20,7 @@
 #include <utility>
 #include <time.h>
 
+#include <cmath>
 #include <ctype.h>  // isalnum
 
 #include "cpl_error_internal.h"
@@ -1693,7 +1678,7 @@ bool GDALExtendedDataType::CopyValue(const void *pSrc,
                 str = CPLSPrintf("%.9g", *static_cast<const float *>(pSrc));
                 break;
             case GDT_Float64:
-                str = CPLSPrintf("%.18g", *static_cast<const double *>(pSrc));
+                str = CPLSPrintf("%.17g", *static_cast<const double *>(pSrc));
                 break;
             case GDT_CInt16:
             {
@@ -1716,7 +1701,7 @@ bool GDALExtendedDataType::CopyValue(const void *pSrc,
             case GDT_CFloat64:
             {
                 const double *src = static_cast<const double *>(pSrc);
-                str = CPLSPrintf("%.18g+%.18gj", src[0], src[1]);
+                str = CPLSPrintf("%.17g+%.17gj", src[0], src[1]);
                 break;
             }
             case GDT_TypeCount:
@@ -8186,10 +8171,10 @@ std::shared_ptr<GDALMDArray> GDALMDArrayResampled::Create(
                          "Setting geolocation array from variables %s and %s",
                          poLongVar->GetName().c_str(),
                          poLatVar->GetName().c_str());
-                std::string osFilenameLong =
-                    CPLSPrintf("/vsimem/%p/longitude.tif", poParent.get());
-                std::string osFilenameLat =
-                    CPLSPrintf("/vsimem/%p/latitude.tif", poParent.get());
+                const std::string osFilenameLong =
+                    VSIMemGenerateHiddenFilename("longitude.tif");
+                const std::string osFilenameLat =
+                    VSIMemGenerateHiddenFilename("latitude.tif");
                 std::unique_ptr<GDALDataset> poTmpLongDS(
                     longDimCount == 1
                         ? poLongVar->AsClassicDataset(0, 0)
@@ -8255,10 +8240,10 @@ std::shared_ptr<GDALMDArray> GDALMDArrayResampled::Create(
         const double dfYMin =
             dfYMax + dfYSpacing * static_cast<double>(poNewDimY->GetSize());
         aosArgv.AddString("-te");
-        aosArgv.AddString(CPLSPrintf("%.18g", dfXMin));
-        aosArgv.AddString(CPLSPrintf("%.18g", dfYMin));
-        aosArgv.AddString(CPLSPrintf("%.18g", dfXMax));
-        aosArgv.AddString(CPLSPrintf("%.18g", dfYMax));
+        aosArgv.AddString(CPLSPrintf("%.17g", dfXMin));
+        aosArgv.AddString(CPLSPrintf("%.17g", dfYMin));
+        aosArgv.AddString(CPLSPrintf("%.17g", dfXMax));
+        aosArgv.AddString(CPLSPrintf("%.17g", dfYMax));
     }
 
     if (poNewDimX && poNewDimY)
@@ -9499,6 +9484,12 @@ lbl_next_depth:
         }
         poDS->SetDerivedDatasetName(osDerivedDatasetName.c_str());
         poDS->TryLoadXML();
+
+        for (const auto &[pszKey, pszValue] : cpl::IterateNameValue(
+                 CSLConstList(poDS->GDALPamDataset::GetMetadata())))
+        {
+            poDS->m_oMDD.SetMetadataItem(pszKey, pszValue);
+        }
     }
 
     return poDS.release();
@@ -14045,15 +14036,15 @@ void GDALPamMultiDim::Save()
                                                                      : "0");
             CPLCreateXMLElementAndValue(
                 psMDArray, "Minimum",
-                CPLSPrintf("%.18g", kv.second.stats.dfMin));
+                CPLSPrintf("%.17g", kv.second.stats.dfMin));
             CPLCreateXMLElementAndValue(
                 psMDArray, "Maximum",
-                CPLSPrintf("%.18g", kv.second.stats.dfMax));
+                CPLSPrintf("%.17g", kv.second.stats.dfMax));
             CPLCreateXMLElementAndValue(
-                psMDArray, "Mean", CPLSPrintf("%.18g", kv.second.stats.dfMean));
+                psMDArray, "Mean", CPLSPrintf("%.17g", kv.second.stats.dfMean));
             CPLCreateXMLElementAndValue(
                 psMDArray, "StdDev",
-                CPLSPrintf("%.18g", kv.second.stats.dfStdDev));
+                CPLSPrintf("%.17g", kv.second.stats.dfStdDev));
             CPLCreateXMLElementAndValue(
                 psMDArray, "ValidSampleCount",
                 CPLSPrintf(CPL_FRMT_GUIB, kv.second.stats.nValidCount));

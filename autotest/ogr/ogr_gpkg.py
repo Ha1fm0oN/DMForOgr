@@ -11,23 +11,7 @@
 # Copyright (c) 2004, Paul Ramsey <pramsey@boundlessgeom.com>
 # Copyright (c) 2014, Even Rouault <even dot rouault at spatialys.com>
 #
-# Permission is hereby granted, free of charge, to any person obtaining a
-# copy of this software and associated documentation files (the "Software"),
-# to deal in the Software without restriction, including without limitation
-# the rights to use, copy, modify, merge, publish, distribute, sublicense,
-# and/or sell copies of the Software, and to permit persons to whom the
-# Software is furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included
-# in all copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-# OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
-# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-# FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-# DEALINGS IN THE SOFTWARE.
+# SPDX-License-Identifier: MIT
 ###############################################################################
 
 import math
@@ -10536,6 +10520,88 @@ def test_ogr_gpkg_ST_Area_on_ellipsoid(tmp_vsimem):
     with gdal.quiet_errors():
         with ds.ExecuteSQL(
             f"SELECT ST_Area(SetSRID({geom_colname}, -10), 0) FROM my_layer"
+        ) as sql_lyr:
+            f = sql_lyr.GetNextFeature()
+            assert f[0] is None
+
+
+###############################################################################
+# Test ST_Length(geom)
+
+
+def test_ogr_gpkg_ST_Length(tmp_vsimem):
+
+    tmpfilename = tmp_vsimem / "test_ogr_sql_ST_Length.gpkg"
+
+    ds = ogr.GetDriverByName("GPKG").CreateDataSource(tmpfilename)
+    srs = osr.SpatialReference()
+    srs.ImportFromEPSG(4258)
+    lyr = ds.CreateLayer("my_layer", srs=srs)
+    geom_colname = lyr.GetGeometryColumn()
+    feat = ogr.Feature(lyr.GetLayerDefn())
+    feat.SetGeometryDirectly(
+        ogr.CreateGeometryFromWkt("POLYGON((2 49,3 49,3 48,2 49))")
+    )
+    lyr.CreateFeature(feat)
+    feat = None
+
+    with ds.ExecuteSQL(f"SELECT ST_Length({geom_colname}) FROM my_layer") as sql_lyr:
+        f = sql_lyr.GetNextFeature()
+        assert f[0] == pytest.approx(3.414213562373095)
+
+    with ds.ExecuteSQL("SELECT ST_Length(null) FROM my_layer") as sql_lyr:
+        f = sql_lyr.GetNextFeature()
+        assert f[0] is None
+
+    with gdal.quiet_errors():
+        with ds.ExecuteSQL("SELECT ST_Length(X'FF') FROM my_layer") as sql_lyr:
+            f = sql_lyr.GetNextFeature()
+            assert f[0] is None
+
+
+###############################################################################
+# Test ST_Length(geom, use_ellipsoid=True)
+
+
+def test_ogr_gpkg_ST_Length_on_ellipsoid(tmp_vsimem):
+
+    tmpfilename = tmp_vsimem / "test_ogr_sql_ST_Length_on_ellipsoid.gpkg"
+
+    ds = ogr.GetDriverByName("GPKG").CreateDataSource(tmpfilename)
+    srs = osr.SpatialReference()
+    srs.ImportFromEPSG(4258)
+    lyr = ds.CreateLayer("my_layer", srs=srs)
+    geom_colname = lyr.GetGeometryColumn()
+    feat = ogr.Feature(lyr.GetLayerDefn())
+    feat.SetGeometryDirectly(
+        ogr.CreateGeometryFromWkt("POLYGON((2 49,3 49,3 48,2 49))")
+    )
+    lyr.CreateFeature(feat)
+    feat = None
+
+    with ds.ExecuteSQL(f"SELECT ST_Length({geom_colname}, 1) FROM my_layer") as sql_lyr:
+        f = sql_lyr.GetNextFeature()
+        assert f[0] == pytest.approx(317885.7863996293)
+
+    with gdal.quiet_errors():
+        with ds.ExecuteSQL(
+            f"SELECT ST_Length({geom_colname}, 0) FROM my_layer"
+        ) as sql_lyr:
+            f = sql_lyr.GetNextFeature()
+            assert f[0] == pytest.approx(317885.7863996293)
+
+    with ds.ExecuteSQL("SELECT ST_Length(null, 1) FROM my_layer") as sql_lyr:
+        f = sql_lyr.GetNextFeature()
+        assert f[0] is None
+
+    with gdal.quiet_errors():
+        with ds.ExecuteSQL("SELECT ST_Length(X'FF', 1) FROM my_layer") as sql_lyr:
+            f = sql_lyr.GetNextFeature()
+            assert f[0] is None
+
+    with gdal.quiet_errors():
+        with ds.ExecuteSQL(
+            f"SELECT ST_Length(SetSRID({geom_colname}, -10), 0) FROM my_layer"
         ) as sql_lyr:
             f = sql_lyr.GetNextFeature()
             assert f[0] is None

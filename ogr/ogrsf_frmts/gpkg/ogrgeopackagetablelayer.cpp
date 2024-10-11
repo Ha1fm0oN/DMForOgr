@@ -8,23 +8,7 @@
  * Copyright (c) 2013, Paul Ramsey <pramsey@boundlessgeo.com>
  * Copyright (c) 2014, Even Rouault <even dot rouault at spatialys.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "ogr_geopackage.h"
@@ -67,8 +51,8 @@ OGRErr OGRGeoPackageTableLayer::SaveExtent()
 
     char *pszSQL =
         sqlite3_mprintf("UPDATE gpkg_contents SET "
-                        "min_x = %.18g, min_y = %.18g, "
-                        "max_x = %.18g, max_y = %.18g "
+                        "min_x = %.17g, min_y = %.17g, "
+                        "max_x = %.17g, max_y = %.17g "
                         "WHERE lower(table_name) = lower('%q') AND "
                         "Lower(data_type) = 'features'",
                         m_poExtent->MinX, m_poExtent->MinY, m_poExtent->MaxX,
@@ -3523,9 +3507,9 @@ OGRErr OGRGeoPackageTableLayer::ResetStatementInternal(GIntBig nStartIndex)
                 bUseSpatialIndex = false;
             }
 
-            if (bUseSpatialIndex && !CPLIsInf(sEnvelope.MinX) &&
-                !CPLIsInf(sEnvelope.MinY) && !CPLIsInf(sEnvelope.MaxX) &&
-                !CPLIsInf(sEnvelope.MaxY))
+            if (bUseSpatialIndex && !std::isinf(sEnvelope.MinX) &&
+                !std::isinf(sEnvelope.MinY) && !std::isinf(sEnvelope.MaxX) &&
+                !std::isinf(sEnvelope.MaxY))
             {
                 soSQL.Printf("SELECT %s FROM \"%s\" m "
                              "JOIN \"%s\" r "
@@ -4042,8 +4026,8 @@ GIntBig OGRGeoPackageTableLayer::GetFeatureCount(int /*bForce*/)
 
         m_poFilterGeom->getEnvelope(&sEnvelope);
 
-        if (!CPLIsInf(sEnvelope.MinX) && !CPLIsInf(sEnvelope.MinY) &&
-            !CPLIsInf(sEnvelope.MaxX) && !CPLIsInf(sEnvelope.MaxY))
+        if (!std::isinf(sEnvelope.MinX) && !std::isinf(sEnvelope.MinY) &&
+            !std::isinf(sEnvelope.MaxX) && !std::isinf(sEnvelope.MaxY))
         {
             soSQL.Printf("SELECT COUNT(*) FROM \"%s\" WHERE "
                          "maxx >= %.12f AND minx <= %.12f AND "
@@ -5503,10 +5487,10 @@ CPLString OGRGeoPackageTableLayer::GetSpatialWhere(int m_iGeomColIn,
         const char *pszC =
             m_poFeatureDefn->GetGeomFieldDefn(m_iGeomColIn)->GetNameRef();
 
-        if (CPLIsInf(sEnvelope.MinX) && sEnvelope.MinX < 0 &&
-            CPLIsInf(sEnvelope.MinY) && sEnvelope.MinY < 0 &&
-            CPLIsInf(sEnvelope.MaxX) && sEnvelope.MaxX > 0 &&
-            CPLIsInf(sEnvelope.MaxY) && sEnvelope.MaxY > 0)
+        if (std::isinf(sEnvelope.MinX) && sEnvelope.MinX < 0 &&
+            std::isinf(sEnvelope.MinY) && sEnvelope.MinY < 0 &&
+            std::isinf(sEnvelope.MaxX) && sEnvelope.MaxX > 0 &&
+            std::isinf(sEnvelope.MaxY) && sEnvelope.MaxY > 0)
         {
             osSpatialWHERE.Printf(
                 "(\"%s\" IS NOT NULL AND NOT ST_IsEmpty(\"%s\"))",
@@ -7805,12 +7789,13 @@ void OGR_GPKG_FillArrowArray_Step(sqlite3_context *pContext, int /*argc*/,
     const int SQLITE_MAX_FUNCTION_ARG =
         sqlite3_limit(psFillArrowArray->hDB, SQLITE_LIMIT_FUNCTION_ARG, -1);
 begin:
-    const int iFeat = [psFillArrowArray]()
+    int iFeat;
+    OGRArrowArrayHelper *psHelper;
     {
         std::unique_lock<std::mutex> oLock(psFillArrowArray->oMutex);
-        return psFillArrowArray->nCountRows;
-    }();
-    auto psHelper = psFillArrowArray->psHelper.get();
+        iFeat = psFillArrowArray->nCountRows;
+        psHelper = psFillArrowArray->psHelper.get();
+    }
     int iCol = 0;
     const int iFieldStart = sqlite3_value_int(argv[iCol]);
     ++iCol;
@@ -8478,9 +8463,9 @@ void OGRGeoPackageTableLayer::GetNextArrowArrayAsynchronousWorker()
                 bUseSpatialIndex = false;
             }
 
-            if (bUseSpatialIndex && !CPLIsInf(sEnvelope.MinX) &&
-                !CPLIsInf(sEnvelope.MinY) && !CPLIsInf(sEnvelope.MaxX) &&
-                !CPLIsInf(sEnvelope.MaxY))
+            if (bUseSpatialIndex && !std::isinf(sEnvelope.MinX) &&
+                !std::isinf(sEnvelope.MinY) && !std::isinf(sEnvelope.MaxX) &&
+                !std::isinf(sEnvelope.MaxY))
             {
                 osSQL +=
                     CPLSPrintf(" JOIN \"%s\" r "

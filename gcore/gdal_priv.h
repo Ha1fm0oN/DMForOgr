@@ -10,23 +10,7 @@
  * Copyright (c) 1998, Frank Warmerdam
  * Copyright (c) 2007-2014, Even Rouault <even dot rouault at spatialys.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #ifndef GDAL_PRIV_H_INCLUDED
@@ -141,9 +125,6 @@ class CPL_DLL GDALMultiDomainMetadata
     {
         Clear();
     }
-
-  private:
-    CPL_DISALLOW_COPY_ASSIGN(GDALMultiDomainMetadata)
 };
 
 //! @endcond
@@ -579,7 +560,8 @@ class CPL_DLL GDALDataset : public GDALMajorObject
               GSpacing nLineSpace, GSpacing nBandSpace,
               GDALRasterIOExtraArg *psExtraArg) CPL_WARN_UNUSED_RESULT;
 
-    CPLErr
+    /* This method should only be be overloaded by GDALProxyDataset */
+    virtual CPLErr
     BlockBasedRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff, int nXSize,
                        int nYSize, void *pData, int nBufXSize, int nBufYSize,
                        GDALDataType eBufType, int nBandCount,
@@ -618,6 +600,15 @@ class CPL_DLL GDALDataset : public GDALMajorObject
                                GDALRasterIOExtraArg *psExtraArg, int *pbTried);
 
     void ShareLockWithParentDataset(GDALDataset *poParentDataset);
+
+    bool m_bCanBeReopened = false;
+
+    virtual bool CanBeCloned(int nScopeFlags, bool bCanShareState) const;
+
+    friend class GDALThreadSafeDataset;
+    friend class MEMDataset;
+    virtual std::unique_ptr<GDALDataset> Clone(int nScopeFlags,
+                                               bool bCanShareState) const;
 
     //! @endcond
 
@@ -830,7 +821,7 @@ class CPL_DLL GDALDataset : public GDALMajorObject
     /** Return MarkSuppressOnClose flag.
     * @return MarkSuppressOnClose flag.
     */
-    bool IsMarkedSuppressOnClose()
+    bool IsMarkedSuppressOnClose() const
     {
         return bSuppressOnClose;
     }
@@ -842,6 +833,8 @@ class CPL_DLL GDALDataset : public GDALMajorObject
     {
         return papszOpenOptions;
     }
+
+    bool IsThreadSafe(int nScopeFlags) const;
 
 #ifndef DOXYGEN_SKIP
     /** Return open options.
@@ -1582,6 +1575,11 @@ class CPL_DLL GDALRasterBand : public GDALMajorObject
             m_poBandRef = bOwned ? nullptr : poBand;
         }
 
+        const GDALRasterBand *get() const
+        {
+            return static_cast<const GDALRasterBand *>(*this);
+        }
+
         GDALRasterBand *get()
         {
             return static_cast<GDALRasterBand *>(*this);
@@ -1590,6 +1588,11 @@ class CPL_DLL GDALRasterBand : public GDALMajorObject
         bool IsOwned() const
         {
             return m_poBandOwned != nullptr;
+        }
+
+        operator const GDALRasterBand *() const
+        {
+            return m_poBandOwned ? m_poBandOwned.get() : m_poBandRef;
         }
 
         operator GDALRasterBand *()
@@ -1625,7 +1628,7 @@ class CPL_DLL GDALRasterBand : public GDALMajorObject
     void InitRWLock();
     void SetValidPercent(GUIntBig nSampleCount, GUIntBig nValidCount);
 
-    mutable std::unique_ptr<GDALDoublePointsCache> m_oPointsCache{};
+    mutable GDALDoublePointsCache *m_poPointsCache = nullptr;
 
     //! @endcond
 
@@ -1679,15 +1682,15 @@ class CPL_DLL GDALRasterBand : public GDALMajorObject
 
     ~GDALRasterBand() override;
 
-    int GetXSize();
-    int GetYSize();
-    int GetBand();
-    GDALDataset *GetDataset();
+    int GetXSize() const;
+    int GetYSize() const;
+    int GetBand() const;
+    GDALDataset *GetDataset() const;
 
-    GDALDataType GetRasterDataType(void);
-    void GetBlockSize(int *pnXSize, int *pnYSize);
+    GDALDataType GetRasterDataType(void) const;
+    void GetBlockSize(int *pnXSize, int *pnYSize) const;
     CPLErr GetActualBlockSize(int nXBlockOff, int nYBlockOff, int *pnXValid,
-                              int *pnYValid);
+                              int *pnYValid) const;
 
     virtual GDALSuggestedBlockAccessPattern
     GetSuggestedBlockAccessPattern() const;
@@ -1750,13 +1753,19 @@ class CPL_DLL GDALRasterBand : public GDALMajorObject
     CPLErr WriteBlock(int nXBlockOff, int nYBlockOff,
                       void *pImage) CPL_WARN_UNUSED_RESULT;
 
-    GDALRasterBlock *
+    // This method should only be overloaded by GDALProxyRasterBand
+    virtual GDALRasterBlock *
     GetLockedBlockRef(int nXBlockOff, int nYBlockOff,
                       int bJustInitialize = FALSE) CPL_WARN_UNUSED_RESULT;
-    GDALRasterBlock *TryGetLockedBlockRef(int nXBlockOff, int nYBlockYOff)
-        CPL_WARN_UNUSED_RESULT;
-    CPLErr FlushBlock(int nXBlockOff, int nYBlockOff,
-                      int bWriteDirtyBlock = TRUE);
+
+    // This method should only be overloaded by GDALProxyRasterBand
+    virtual GDALRasterBlock *
+    TryGetLockedBlockRef(int nXBlockOff,
+                         int nYBlockYOff) CPL_WARN_UNUSED_RESULT;
+
+    // This method should only be overloaded by GDALProxyRasterBand
+    virtual CPLErr FlushBlock(int nXBlockOff, int nYBlockOff,
+                              int bWriteDirtyBlock = TRUE);
 
     unsigned char *
     GetIndexColorTranslationTo(/* const */ GDALRasterBand *poReferenceBand,
@@ -1857,14 +1866,14 @@ class CPL_DLL GDALRasterBand : public GDALMajorObject
 
     std::shared_ptr<GDALMDArray> AsMDArray() const;
 
-    CPLErr InterpolateAtPoint(double dfPixel, double dfLine,
-                              GDALRIOResampleAlg eInterpolation,
-                              double *pdfRealValue,
-                              double *pdfImagValue = nullptr) const;
+    virtual CPLErr InterpolateAtPoint(double dfPixel, double dfLine,
+                                      GDALRIOResampleAlg eInterpolation,
+                                      double *pdfRealValue,
+                                      double *pdfImagValue = nullptr) const;
 
 #ifndef DOXYGEN_XML
-    void ReportError(CPLErr eErrClass, CPLErrorNum err_no, const char *fmt, ...)
-        CPL_PRINT_FUNC_FORMAT(4, 5);
+    void ReportError(CPLErr eErrClass, CPLErrorNum err_no, const char *fmt,
+                     ...) const CPL_PRINT_FUNC_FORMAT(4, 5);
 #endif
 
     /** Convert a GDALRasterBand* to a GDALRasterBandH.
@@ -1886,7 +1895,7 @@ class CPL_DLL GDALRasterBand : public GDALMajorObject
     //! @cond Doxygen_Suppress
     // Remove me in GDAL 4.0. See GetMetadataItem() implementation
     // Internal use in GDAL only !
-    void EnablePixelTypeSignedByteWarning(bool b)
+    virtual void EnablePixelTypeSignedByteWarning(bool b)
 #ifndef GDAL_COMPILATION
         CPL_WARN_DEPRECATED("Do not use that method outside of GDAL!")
 #endif
@@ -2525,6 +2534,7 @@ class CPL_DLL GDALDriverManager : public GDALMajorObject
     //! @cond Doxygen_Suppress
     int GetDriverCount(bool bIncludeHidden) const;
     GDALDriver *GetDriver(int iDriver, bool bIncludeHidden);
+    bool IsKnownDriver(const char *pszDriverName) const;
     //! @endcond
 };
 
@@ -4463,6 +4473,12 @@ void CPL_DLL GDALCopyRasterIOExtraArg(GDALRasterIOExtraArg *psDestArg,
 
 CPL_C_END
 
+std::unique_ptr<GDALDataset> CPL_DLL
+GDALGetThreadSafeDataset(std::unique_ptr<GDALDataset> poDS, int nScopeFlags);
+
+GDALDataset CPL_DLL *GDALGetThreadSafeDataset(GDALDataset *poDS,
+                                              int nScopeFlags);
+
 void GDALNullifyOpenDatasetsList();
 CPLMutex **GDALGetphDMMutex();
 CPLMutex **GDALGetphDLMutex();
@@ -4523,7 +4539,8 @@ void GDALDeserializeGCPListFromXML(const CPLXMLNode *psGCPList,
 
 void GDALSerializeOpenOptionsToXML(CPLXMLNode *psParentNode,
                                    CSLConstList papszOpenOptions);
-char **GDALDeserializeOpenOptionsFromXML(const CPLXMLNode *psParentNode);
+char CPL_DLL **
+GDALDeserializeOpenOptionsFromXML(const CPLXMLNode *psParentNode);
 
 int GDALCanFileAcceptSidecarFile(const char *pszFilename);
 
@@ -4562,6 +4579,11 @@ GDALRasterAttributeTable CPL_DLL *GDALCreateRasterAttributeTableFromMDArrays(
     GDALRATTableType eTableType,
     const std::vector<std::shared_ptr<GDALMDArray>> &apoArrays,
     const std::vector<GDALRATFieldUsage> &aeUsages);
+
+GDALColorInterp CPL_DLL
+GDALGetColorInterpFromSTACCommonName(const char *pszName);
+const char CPL_DLL *
+GDALGetSTACCommonNameFromColorInterp(GDALColorInterp eInterp);
 
 // Macro used so that Identify and driver metadata methods in drivers built
 // as plugin can be duplicated in libgdal core and in the driver under different

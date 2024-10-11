@@ -7,23 +7,7 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (c) 2006, Mateusz Loskot <mateusz@loskot.net>
 /*
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "gdal_unit_test.h"
@@ -35,6 +19,7 @@
 
 #include <string>
 #include <algorithm>
+#include <cmath>
 #include <fstream>
 #include <limits>
 
@@ -50,7 +35,6 @@ namespace
 // Common fixture with test data
 struct test_ogr : public ::testing::Test
 {
-    std::string drv_shape_{"ESRI Shapefile"};
     std::string data_{tut::common::data_basedir};
     std::string data_tmp_{tut::common::tmp_basedir};
 };
@@ -59,14 +43,6 @@ struct test_ogr : public ::testing::Test
 TEST_F(test_ogr, GetGDALDriverManager)
 {
     ASSERT_TRUE(nullptr != GetGDALDriverManager());
-}
-
-// Test if Shapefile driver is registered
-TEST_F(test_ogr, Shapefile_driver)
-{
-    GDALDriver *drv =
-        GetGDALDriverManager()->GetDriverByName(drv_shape_.c_str());
-    ASSERT_TRUE(nullptr != drv);
 }
 
 template <class T>
@@ -1332,6 +1308,12 @@ TEST_F(test_ogr, OGRToOGCGeomType)
 // Test layer, dataset-feature and layer-feature iterators
 TEST_F(test_ogr, DatasetFeature_and_LayerFeature_iterators)
 {
+    if (!GDALGetDriverByName("ESRI Shapefile"))
+    {
+        GTEST_SKIP() << "ESRI Shapefile driver missing";
+        return;
+    }
+
     std::string file(data_ + SEP + "poly.shp");
     GDALDatasetUniquePtr poDS(GDALDataset::Open(file.c_str(), GDAL_OF_VECTOR));
     ASSERT_TRUE(poDS != nullptr);
@@ -4198,6 +4180,75 @@ TEST_F(test_ogr, OGRCurve_reversePoints)
         CPLFree(pszWKT);
         delete poGeom;
     }
+}
+
+// Test OGRGeometryFactory::transformWithOptions()
+TEST_F(test_ogr, transformWithOptions)
+{
+    // Projected CRS to national geographic CRS (not including poles or antimeridian)
+    {
+        OGRGeometry *poGeom = nullptr;
+        OGRGeometryFactory::createFromWkt(
+            "LINESTRING(700000 6600000, 700001 6600001)", nullptr, &poGeom);
+        ASSERT_NE(poGeom, nullptr);
+
+        OGRSpatialReference oEPSG_2154;
+        oEPSG_2154.importFromEPSG(2154);  // "RGF93 v1 / Lambert-93"
+        OGRSpatialReference oEPSG_4171;
+        oEPSG_4171.importFromEPSG(4171);  // "RGF93 v1"
+        oEPSG_4171.SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
+        auto poCT = std::unique_ptr<OGRCoordinateTransformation>(
+            OGRCreateCoordinateTransformation(&oEPSG_2154, &oEPSG_4171));
+        OGRGeometryFactory::TransformWithOptionsCache oCache;
+        poGeom = OGRGeometryFactory::transformWithOptions(poGeom, poCT.get(),
+                                                          nullptr, oCache);
+        EXPECT_NEAR(poGeom->toLineString()->getX(0), 3, 1e-8);
+        EXPECT_NEAR(poGeom->toLineString()->getY(0), 46.5, 1e-8);
+
+        delete poGeom;
+    }
+
+#ifdef HAVE_GEOS
+    // Projected CRS to national geographic CRS including antimeridian
+    {
+        OGRGeometry *poGeom = nullptr;
+        OGRGeometryFactory::createFromWkt(
+            "LINESTRING(657630.64 4984896.17,815261.43 4990738.26)", nullptr,
+            &poGeom);
+        ASSERT_NE(poGeom, nullptr);
+
+        OGRSpatialReference oEPSG_6329;
+        oEPSG_6329.importFromEPSG(6329);  // "NAD83(2011) / UTM zone 60N"
+        OGRSpatialReference oEPSG_6318;
+        oEPSG_6318.importFromEPSG(6318);  // "NAD83(2011)"
+        oEPSG_6318.SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
+        auto poCT = std::unique_ptr<OGRCoordinateTransformation>(
+            OGRCreateCoordinateTransformation(&oEPSG_6329, &oEPSG_6318));
+        OGRGeometryFactory::TransformWithOptionsCache oCache;
+        poGeom = OGRGeometryFactory::transformWithOptions(poGeom, poCT.get(),
+                                                          nullptr, oCache);
+        EXPECT_EQ(poGeom->getGeometryType(), wkbMultiLineString);
+        if (poGeom->getGeometryType() == wkbMultiLineString)
+        {
+            const auto poMLS = poGeom->toMultiLineString();
+            EXPECT_EQ(poMLS->getNumGeometries(), 2);
+            if (poMLS->getNumGeometries() == 2)
+            {
+                const auto poLS = poMLS->getGeometryRef(0);
+                EXPECT_EQ(poLS->getNumPoints(), 2);
+                if (poLS->getNumPoints() == 2)
+                {
+                    EXPECT_NEAR(poLS->getX(0), 179, 1e-6);
+                    EXPECT_NEAR(poLS->getY(0), 45, 1e-6);
+                    EXPECT_NEAR(poLS->getX(1), 180, 1e-6);
+                    EXPECT_NEAR(poLS->getY(1), 45.004384301691303, 1e-6);
+                }
+            }
+        }
+
+        delete poGeom;
+    }
+#endif
 }
 
 }  // namespace

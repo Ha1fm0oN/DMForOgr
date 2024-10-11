@@ -26,6 +26,7 @@ Raster drivers
    adrg
    aig
    airsar
+   avif
    bag
    basisu
    blx
@@ -163,6 +164,7 @@ Raster drivers
    sentinel2
    sgi
    sigdem
+   snap_tiff
    snodas
    srp
    srtmhgt

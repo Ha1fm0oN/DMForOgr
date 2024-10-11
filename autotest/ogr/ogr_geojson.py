@@ -1806,7 +1806,11 @@ def test_ogr_geojson_48(tmp_vsimem):
 # Test UpdateFeature() support
 
 
-def test_ogr_geojson_update_feature(tmp_vsimem):
+@pytest.mark.parametrize("check_after_update_before_reopen", [True, False])
+@pytest.mark.parametrize("sync_to_disk_after_update", [True, False])
+def test_ogr_geojson_update_feature(
+    tmp_vsimem, check_after_update_before_reopen, sync_to_disk_after_update
+):
 
     filename = str(tmp_vsimem / "test.json")
 
@@ -1821,13 +1825,21 @@ def test_ogr_geojson_update_feature(tmp_vsimem):
         lyr = ds.GetLayer(0)
         f = ogr.Feature(lyr.GetLayerDefn())
         f.SetFID(0)
-        f["int64list"] = [123456790123, -123456790123]
+        f["int64list"] = [-123456790123, 123456790123]
         lyr.UpdateFeature(f, [0], [], False)
+
+        if sync_to_disk_after_update:
+            lyr.SyncToDisk()
+
+        if check_after_update_before_reopen:
+            lyr.ResetReading()
+            f = lyr.GetNextFeature()
+            assert f["int64list"] == [-123456790123, 123456790123]
 
     with ogr.Open(filename) as ds:
         lyr = ds.GetLayer(0)
         f = lyr.GetNextFeature()
-        assert f["int64list"] == [123456790123, -123456790123]
+        assert f["int64list"] == [-123456790123, 123456790123]
 
 
 ###############################################################################
@@ -2659,15 +2671,32 @@ def test_ogr_geojson_57(tmp_vsimem):
 
     got = read_file(tmp_vsimem / "out.json")
     gdal.Unlink(tmp_vsimem / "out.json")
-    expected = """{
-"type": "FeatureCollection",
-"bbox": [ 45.0000000, 64.3861643, 135.0000000, 90.0000000 ],
-"features": [
-{ "type": "Feature", "properties": { }, "bbox": [ 45.0, 64.3861643, 135.0, 90.0 ], "geometry": { "type": "Polygon", "coordinates": [ [ [ 135.0, 64.3861643 ], [ 135.0, 90.0 ], [ 45.0, 90.0 ], [ 45.0, 64.3861643 ], [ 135.0, 64.3861643 ] ] ] } }
-]
-}
-"""
-    assert json.loads(got) == json.loads(expected)
+    expected = {
+        "type": "FeatureCollection",
+        "bbox": [45.0, 64.3861643, 135.0, 90.0],
+        "features": [
+            {
+                "type": "Feature",
+                "properties": {},
+                "bbox": [45.0, 64.3861643, 135.0, 90.0],
+                "geometry": {
+                    "type": "MultiPolygon",
+                    "coordinates": [
+                        [
+                            [
+                                [135.0, 64.3861643],
+                                [135.0, 90.0],
+                                [45.0, 90.0],
+                                [45.0, 64.3861643],
+                                [135.0, 64.3861643],
+                            ]
+                        ]
+                    ],
+                },
+            }
+        ],
+    }
+    assert json.loads(got) == expected
 
     # Polar case: slice of spherical cap crossing the antimeridian
     src_ds = gdal.GetDriverByName("Memory").Create("", 0, 0, 0)
@@ -4107,7 +4136,7 @@ def test_ogr_geojson_write_rfc7946_from_3D_crs(tmp_vsimem):
     ds = ogr.GetDriverByName("GeoJSON").CreateDataSource(filename)
     lyr = ds.CreateLayer("out", srs=srs_4326_5773, options=["RFC7946=YES"])
     f = ogr.Feature(lyr.GetLayerDefn())
-    f.SetGeometry(ogr.CreateGeometryFromWkt("POINT(%.18g %.18g %.18g)" % (lon, lat, z)))
+    f.SetGeometry(ogr.CreateGeometryFromWkt("POINT(%.17g %.17g %.17g)" % (lon, lat, z)))
     lyr.CreateFeature(f)
     ds = None
 

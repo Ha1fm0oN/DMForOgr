@@ -58,7 +58,6 @@ Amici
 amongst
 amz
 Amz
-analygous
 analyse
 Analyse
 analysing
@@ -79,7 +78,6 @@ api
 Api
 apoNewDims
 apploy
-appoach
 approximator
 AppVeyor
 APSTILE
@@ -97,7 +95,6 @@ arra
 Arrayname
 arrayStartIdx
 ASC
-ascendent
 ascii
 askin
 aspatial
@@ -133,7 +130,6 @@ autocommit
 autoconf
 Autoconf
 autocorrelation
-autodection
 Autodesk
 autodetect
 autodetected
@@ -200,6 +196,7 @@ BBoxOrder
 bc
 bCatchDebug
 bCopy
+bDelete
 bDstToSrc
 bedrijven
 behaviours
@@ -438,9 +435,6 @@ ComplexSource
 compoundcurves
 compressiblity
 compressions
-compressoin
-comptatible
-Conceptionally
 conceptualhelp
 cond
 conda
@@ -619,6 +613,7 @@ describedby
 deserialization
 deserialize
 deserialized
+deserializing
 desirabled
 dest
 destructor
@@ -660,6 +655,7 @@ dfTargetHeight
 dfTimeout
 dfTolerance
 dfURY
+dfValue
 dfVisibleVal
 dfXOff
 dfXSize
@@ -988,6 +984,7 @@ gdalbuildvrt
 gdalcompare
 gdalconst
 gdaldata
+GDALDataset
 gdaldem
 gdaldriver
 gdalenhance
@@ -1017,6 +1014,7 @@ gdalrasterblock
 gdalrc
 gdalsrsinfo
 gdaltest
+GDALThreadLocalDatasetCache
 gdaltindex
 gdaltransform
 gdalvirtualmem
@@ -1046,6 +1044,7 @@ Geodatabase
 geodatabases
 Geodatabases
 GeodesicArea
+GeodesicLength
 Geogrid
 geohash
 geohashes
@@ -1395,6 +1394,7 @@ InfoFormat
 InfoOptions
 Informatisé
 Informix
+InfraRed
 ing
 ini
 init
@@ -1511,6 +1511,7 @@ KShortest
 kslikebase
 KSpread
 ktx
+Ku
 Kubernetes
 Kumar
 Kuratomi
@@ -1542,15 +1543,19 @@ LegalConstraints
 len
 Leveller
 lf
+libaom
 libarchive
 libarrow
+libavif
 libblosc
 libbsd
 libcf
 libcfitsio
 libcrypto
+libcsf
 libcurl
 libCurl
+libdav
 libde
 libdeflate
 libdf
@@ -1574,6 +1579,7 @@ libkdu
 libkea
 libkml
 Libkml
+liblerc
 libltidsdk
 liblz
 libmdbodbc
@@ -1850,6 +1856,7 @@ MultiPolygon
 multipolygons
 multiproc
 multiprocess
+multireadtest
 multirecords
 multispectral
 multistring
@@ -2047,6 +2054,7 @@ nRecurseDepth
 nRefCount
 nReqOrder
 nSampleStep
+nScopeFlags
 nSecond
 nSize
 nSrcBufferAllocSize
@@ -2299,6 +2307,7 @@ papszSrcDSNames
 papszURL
 papszVectorTranslateArguments
 papszWarpOptions
+Paquet
 paradygm
 parallelisation
 parallelising
@@ -2724,6 +2733,7 @@ RecordBatch
 RecordBatchAsNumpy
 recurse
 recursionLevel
+redirections
 Redistributable
 reentrancy
 reentrant
@@ -2929,6 +2939,7 @@ sig
 Sightlines
 signedness
 significants
+Simmon
 sinc
 sizeBytes
 sizeKnown
@@ -3359,6 +3370,7 @@ UpdateFeature
 updateTime
 UpperLeftX
 UpperLeftY
+upsampling
 upsert
 uri
 url

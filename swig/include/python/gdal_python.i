@@ -1614,10 +1614,23 @@ CPLErr ReadRaster1( double xoff, double yoff, double xsize, double ysize,
         return get(value)
 %}
 
+%feature("pythonappend") GetThreadSafeDataset %{
+    if val:
+        val._parent_ds = self
+
+        import weakref
+        if not hasattr(self, '_child_references'):
+            self._child_references = weakref.WeakSet()
+        self._child_references.add(val)
+%}
+
+%feature("pythonprepend") Close %{
+    self._invalidate_children()
+%}
+
 %feature("pythonappend") Close %{
     self.thisown = 0
     self.this = None
-    self._invalidate_children()
 %}
 
 %feature("shadow") ExecuteSQL %{
@@ -2939,7 +2952,7 @@ def WarpOptions(options=None, format=None,
         if transformerOptions is not None:
             if isinstance(transformerOptions, dict):
                 for k, v in transformerOptions.items():
-                    new_options += ['-to', opt]
+                    new_options += ['-to', f'{k}={v}']
             else:
                 for opt in transformerOptions:
                     new_options += ['-to', opt]
@@ -2992,7 +3005,12 @@ def Warp(destNameOrDestDS, srcDSOrSrcDSTab, **kwargs):
     Parameters
     ----------
     destNameOrDestDS:
-        Output dataset name or object
+        Output dataset name or object.
+
+        If passed as a dataset name, a potentially existing output dataset of
+        the same name will be overwritten. To update an existing output dataset,
+        it must be passed as a dataset object.
+
     srcDSOrSrcDSTab:
         an array of Dataset objects or filenames, or a Dataset object or a filename
     kwargs:
@@ -3408,6 +3426,13 @@ def VectorTranslate(destNameOrDestDS, srcDS, **kwargs):
     ----------
     destNameOrDestDS:
         Output dataset name or object
+
+        If passed as a dataset name, a potentially existing output dataset of
+        the same name will be overwritten. To update an existing output dataset,
+        it must be passed as a dataset object. Note that the accessMode parameter
+        also controls, at the layer level, if existing layers must be overwritten
+        or updated.
+
     srcDS:
         a Dataset object or a filename
     kwargs:
@@ -3675,6 +3700,11 @@ def Nearblack(destNameOrDestDS, srcDS, **kwargs):
     ----------
     destNameOrDestDS:
         Output dataset name or object
+
+        If passed as a dataset name, a potentially existing output dataset of
+        the same name will be overwritten. To update an existing output dataset,
+        it must be passed as a dataset object.
+
     srcDS:
         a Dataset object or a filename
     kwargs:
@@ -4030,7 +4060,12 @@ def Rasterize(destNameOrDestDS, srcDS, **kwargs):
     Parameters
     ----------
     destNameOrDestDS:
-        Output dataset name or object
+        Output dataset name or object.
+
+        If passed as a dataset name, a potentially existing output dataset of
+        the same name will be overwritten. To update an existing output dataset,
+        it must be passed as a dataset object.
+
     srcDS:
         a Dataset object or a filename
     kwargs:
@@ -4199,6 +4234,11 @@ def Footprint(destNameOrDestDS, srcDS, **kwargs):
     ----------
     destNameOrDestDS:
         Output dataset name or object
+
+        If passed as a dataset name, a potentially existing output dataset of
+        the same name will be overwritten. To update an existing output dataset,
+        it must be passed as a dataset object.
+
     srcDS:
         a Dataset object or a filename
     kwargs:

@@ -8,23 +8,7 @@
  * Copyright (c) 1999, Frank Warmerdam
  * Copyright (c) 2008-2014, Even Rouault <even dot rouault at spatialys.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "ogr_geometry.h"
@@ -44,7 +28,7 @@ namespace
 
 int DoubleToIntClamp(double dfValue)
 {
-    if (CPLIsNan(dfValue))
+    if (std::isnan(dfValue))
         return 0;
     if (dfValue >= std::numeric_limits<int>::max())
         return std::numeric_limits<int>::max();
@@ -3057,36 +3041,39 @@ double OGRLineString::get_Area() const
 }
 
 /************************************************************************/
-/*                        get_GeodesicArea()                            */
+/*                        GetGeodesicAreaOrLength()                     */
 /************************************************************************/
 
-double
-OGRLineString::get_GeodesicArea(const OGRSpatialReference *poSRSOverride) const
+static bool GetGeodesicAreaOrLength(const OGRLineString *poLS,
+                                    const OGRSpatialReference *poSRSOverride,
+                                    double *pdfArea, double *pdfLength)
 {
     if (!poSRSOverride)
-        poSRSOverride = getSpatialReference();
+        poSRSOverride = poLS->getSpatialReference();
 
     if (!poSRSOverride)
     {
         CPLError(CE_Failure, CPLE_AppDefined,
-                 "Cannot compute area on ellipsoid due to missing SRS");
-        return -1;
+                 "Cannot compute %s on ellipsoid due to missing SRS",
+                 pdfArea ? "area" : "length");
+        return false;
     }
 
     OGRErr eErr = OGRERR_NONE;
     double dfSemiMajor = poSRSOverride->GetSemiMajor(&eErr);
     if (eErr != OGRERR_NONE)
-        return -1;
+        return false;
     const double dfInvFlattening = poSRSOverride->GetInvFlattening(&eErr);
     if (eErr != OGRERR_NONE)
-        return -1;
+        return false;
 
     geod_geodesic g;
     geod_init(&g, dfSemiMajor,
               dfInvFlattening != 0 ? 1.0 / dfInvFlattening : 0.0);
-    double dfArea = -1;
+
     std::vector<double> adfLat;
     std::vector<double> adfLon;
+    const int nPointCount = poLS->getNumPoints();
     adfLat.reserve(nPointCount);
     adfLon.reserve(nPointCount);
 
@@ -3095,7 +3082,7 @@ OGRLineString::get_GeodesicArea(const OGRSpatialReference *poSRSOverride) const
     {
         CPLError(CE_Failure, CPLE_AppDefined,
                  "Cannot reproject geometry to geographic CRS");
-        return -1;
+        return false;
     }
     oGeogCRS.SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
     auto poCT = std::unique_ptr<OGRCoordinateTransformation>(
@@ -3104,12 +3091,12 @@ OGRLineString::get_GeodesicArea(const OGRSpatialReference *poSRSOverride) const
     {
         CPLError(CE_Failure, CPLE_AppDefined,
                  "Cannot reproject geometry to geographic CRS");
-        return -1;
+        return false;
     }
     for (int i = 0; i < nPointCount; ++i)
     {
-        adfLon.push_back(paoPoints[i].x);
-        adfLat.push_back(paoPoints[i].y);
+        adfLon.push_back(poLS->getX(i));
+        adfLat.push_back(poLS->getY(i));
     }
 #ifdef __GNUC__
 #pragma GCC diagnostic push
@@ -3132,15 +3119,41 @@ OGRLineString::get_GeodesicArea(const OGRSpatialReference *poSRSOverride) const
         {
             CPLError(CE_Failure, CPLE_AppDefined,
                      "Cannot reproject geometry to geographic CRS");
-            return -1;
+            return false;
         }
         adfLon[i] *= dfToDegrees;
         adfLat[i] *= dfToDegrees;
     }
 
     geod_polygonarea(&g, adfLat.data(), adfLon.data(),
-                     static_cast<int>(adfLat.size()), &dfArea, nullptr);
+                     static_cast<int>(adfLat.size()), pdfArea, pdfLength);
+    return true;
+}
+
+/************************************************************************/
+/*                        get_GeodesicArea()                            */
+/************************************************************************/
+
+double
+OGRLineString::get_GeodesicArea(const OGRSpatialReference *poSRSOverride) const
+{
+    double dfArea = 0;
+    if (!GetGeodesicAreaOrLength(this, poSRSOverride, &dfArea, nullptr))
+        return -1.0;
     return std::fabs(dfArea);
+}
+
+/************************************************************************/
+/*                        get_GeodesicLength()                          */
+/************************************************************************/
+
+double OGRLineString::get_GeodesicLength(
+    const OGRSpatialReference *poSRSOverride) const
+{
+    double dfLength = 0;
+    if (!GetGeodesicAreaOrLength(this, poSRSOverride, nullptr, &dfLength))
+        return -1;
+    return dfLength;
 }
 
 /************************************************************************/
