@@ -450,6 +450,22 @@ gdal_check_package(MONGOCXX "Enable MongoDBV3 driver" CAN_DISABLE)
 define_find_package2(HEIF libheif/heif.h heif PKGCONFIG_NAME libheif)
 gdal_check_package(HEIF "HEIF >= 1.1" CAN_DISABLE)
 
+include(CheckCXXSourceCompiles)
+check_cxx_source_compiles(
+    "
+    #include <libheif/heif.h>
+    int main()
+    {
+        struct heif_image_tiling tiling;
+        return 0;
+    }
+    "
+    LIBHEIF_SUPPORTS_TILES
+)
+if (LIBHEIF_SUPPORTS_TILES)
+  set_property(TARGET HEIF::HEIF APPEND PROPERTY INTERFACE_COMPILE_DEFINITIONS "LIBHEIF_SUPPORTS_TILES")
+endif ()
+
 include(CheckDependentLibrariesAVIF)
 
 include(CheckDependentLibrariesOpenJPEG)
@@ -479,6 +495,8 @@ gdal_check_package(LURATECH "Enable JP2Lura driver" CAN_DISABLE)
 include(CheckDependentLibrariesArrowParquet)
 
 gdal_check_package(OpenDrive "Enable libOpenDRIVE" CONFIG CAN_DISABLE)
+
+gdal_check_package(AdbcDriverManager "Enable ADBC" CONFIG CAN_DISABLE)
 
 # bindings
 

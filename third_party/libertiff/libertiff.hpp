@@ -1068,6 +1068,7 @@ class Image
             {
                 if LIBERTIFF_CONSTEXPR (sizeof(tag.count) > sizeof(size_t))
                 {
+                    // coverity[result_independent_of_operands]
                     if (tag.count > std::numeric_limits<size_t>::max())
                     {
                         ok = false;
@@ -1142,6 +1143,7 @@ class Image
         if (!ok)
             return nullptr;
         image->m_tags.reserve(tagCount);
+        // coverity[tainted_data]
         for (int i = 0; i < tagCount; ++i)
         {
             TagEntry entry;
@@ -1433,7 +1435,7 @@ class Image
 
                 entry.invalid_value_offset =
                     (byteCount > THRESHOLD_CHECK_FILE_SIZE &&
-                     (entry.value_offset >= m_rc->size() ||
+                     (m_rc->size() < byteCount ||
                       entry.value_offset > m_rc->size() - byteCount));
             }
         }

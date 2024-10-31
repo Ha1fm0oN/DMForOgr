@@ -43,9 +43,10 @@ else:
     doc_version = open(version_file).read().strip()
     gdal_version = gdal.__version__
     gdal_version_stripped = gdal_version
-    pos_dev = gdal_version_stripped.find("dev")
-    if pos_dev > 0:
-        gdal_version_stripped = gdal_version_stripped[0:pos_dev]
+    for suffix in ["dev", "beta"]:
+        pos_suffix = gdal_version_stripped.find(suffix)
+        if pos_suffix > 0:
+            gdal_version_stripped = gdal_version_stripped[0:pos_suffix]
 
     if doc_version.strip() != gdal_version_stripped:
         logger.warn(
@@ -151,6 +152,9 @@ html_theme_options = {
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ["_static"]
 html_extra_path = ["../build/html_extra"]
+
+html_js_files = ["announcement.js"]
+html_css_files = ["announcement.css"]
 
 # If true, links to the reST sources are added to the pages.
 html_show_sourcelink = False
@@ -490,6 +494,7 @@ man_pages = [
 preamble = r"""
 \ifdefined\DeclareUnicodeCharacter
   \DeclareUnicodeCharacter{2032}{$'$}% prime
+  \DeclareUnicodeCharacter{200B}{{\hskip 0pt}}
 \fi
 """
 

@@ -224,6 +224,22 @@ BUILD_ARGS=(
 if test "${RELEASE}" = "yes"; then
     BUILD_ARGS+=("--build-arg" "GDAL_BUILD_IS_RELEASE=YES")
 
+    if [ -z "${SOURCE_DATE_EPOCH}" ]; then
+        # Try to set SOURCE_DATE_EPOCH to the timestamp of the tar.gz for
+        # the release, so repeated builds give similar output.
+        # https://github.com/moby/buildkit/blob/master/docs/build-repro.md#source_date_epoch
+        # Will proceed without setting SOURCE_DATE_EPOCH when failing to get
+        # the timestamp, so "build.sh --gdal HEAD" works.
+        LAST_MODIFIED=$(curl -L -sI "https://github.com/OSGeo/gdal/releases/download/${GDAL_VERSION}/gdal-${GDAL_VERSION#v}.tar.gz" \
+                            | grep -i last-modified | awk -F: '{print $2}')
+        if [ -n "${LAST_MODIFIED}" ]; then
+            MODIFIED_SINCE_EPOCH=$(date -d "${LAST_MODIFIED}" +%s)
+            if [ -n "${MODIFIED_SINCE_EPOCH}" ]; then
+                export SOURCE_DATE_EPOCH="${MODIFIED_SINCE_EPOCH}"
+            fi
+        fi
+    fi
+
     if test "${BASE_IMAGE}" != ""; then
         BUILD_ARGS+=("--build-arg" "BASE_IMAGE=${BASE_IMAGE}")
         if test "${TARGET_IMAGE}" = "osgeo/gdal:ubuntu-full" -o "${TARGET_IMAGE}" = "osgeo/gdal:ubuntu-small"; then
@@ -282,11 +298,15 @@ else
         RSYNC_DAEMON_CONTAINER=gdal_rsync_daemon
         HOST_CACHE_DIR="$HOME/gdal-docker-cache"
 
-        mkdir -p "${HOST_CACHE_DIR}/${TARGET_IMAGE}/proj/x86_64"
-        mkdir -p "${HOST_CACHE_DIR}/${TARGET_IMAGE}/proj/aarch64"
-        mkdir -p "${HOST_CACHE_DIR}/${TARGET_IMAGE}/gdal/x86_64"
-        mkdir -p "${HOST_CACHE_DIR}/${TARGET_IMAGE}/gdal/aarch64"
+        mkdir -p "${HOST_CACHE_DIR}/${TARGET_IMAGE}/proj/"{x86_64,aarch64}
+        mkdir -p "${HOST_CACHE_DIR}/${TARGET_IMAGE}/gdal/"{x86_64,aarch64}
+        mkdir -p "${HOST_CACHE_DIR}/${TARGET_IMAGE}/kealib/"{x86_64,aarch64}
+        mkdir -p "${HOST_CACHE_DIR}/${TARGET_IMAGE}/libjxl/"{x86_64,aarch64}
+        mkdir -p "${HOST_CACHE_DIR}/${TARGET_IMAGE}/libopendrive/"{x86_64,aarch64}
+        mkdir -p "${HOST_CACHE_DIR}/${TARGET_IMAGE}/libqb3/"{x86_64,aarch64}
+        mkdir -p "${HOST_CACHE_DIR}/${TARGET_IMAGE}/"mongo-{c,cxx}-driver/{x86_64,aarch64}
         mkdir -p "${HOST_CACHE_DIR}/${TARGET_IMAGE}/spatialite"
+        mkdir -p "${HOST_CACHE_DIR}/${TARGET_IMAGE}/tiledb/"{x86_64,aarch64}
 
         # Start a Docker container that has a rsync daemon, mounting HOST_CACHE_DIR
         if ! docker ps | grep "${RSYNC_DAEMON_CONTAINER}"; then
@@ -337,18 +357,10 @@ EOF
           BASE_IMAGE=$(grep "ARG BASE_IMAGE=" ${SCRIPT_DIR}/Dockerfile | sed "s/ARG BASE_IMAGE=//")
           echo "Fetching digest for ${BASE_IMAGE} ${ARCH_PLATFORMS}..."
           ARCH_PLATFORM_ARCH=$(echo ${ARCH_PLATFORMS} | sed "s/linux\///")
-
-          # Below no longer works with recent Ubuntu images with Docker client < 23.0.0
-          # Cf https://github.com/moby/moby/issues/44898
-          #TARGET_BASE_IMAGE_DIGEST=$(docker manifest inspect ${BASE_IMAGE} | jq --raw-output '.manifests[] | (if .platform.architecture == "'${ARCH_PLATFORM_ARCH}'" then .digest else empty end)')
-          # So workaround the issue by pulling explicitly the image
-          docker pull arm64v8/${BASE_IMAGE}
-          TARGET_BASE_IMAGE_DIGEST=$(docker inspect arm64v8/${BASE_IMAGE}  | jq --raw-output '.[0].Id')
-
-          echo "${TARGET_BASE_IMAGE_DIGEST}"
+          TARGET_BASE_IMAGE_DIGEST=$(docker manifest inspect ${BASE_IMAGE} | jq --raw-output '.manifests[] | (if .platform.architecture == "'${ARCH_PLATFORM_ARCH}'" then .digest else empty end)')
+          docker pull "${BASE_IMAGE}@${TARGET_BASE_IMAGE_DIGEST}"
           BUILD_ARGS+=("--build-arg" "TARGET_ARCH=${ARCH_PLATFORM_ARCH}")
-          #BUILD_ARGS+=("--build-arg" "TARGET_BASE_IMAGE=${BASE_IMAGE}@${TARGET_BASE_IMAGE_DIGEST}")
-          BUILD_ARGS+=("--build-arg" "TARGET_BASE_IMAGE=${TARGET_BASE_IMAGE_DIGEST}")
+          BUILD_ARGS+=("--build-arg" "TARGET_BASE_IMAGE=${BASE_IMAGE}@${TARGET_BASE_IMAGE_DIGEST}")
           # echo "${BUILD_ARGS[@]}"
         fi
       elif test "${DOCKER_BUILDX}" != "buildx" -a \( "${IMAGE_NAME}" = "osgeo/gdal:alpine-small-latest" -o "${IMAGE_NAME}" = "osgeo/gdal:alpine-normal-latest" \); then

@@ -372,8 +372,9 @@ class GDALGeoPackageDataset final : public OGRSQLiteBaseDataSource,
 
     int GetSrsId(const OGRSpatialReference *poSRS);
     const char *GetSrsName(const OGRSpatialReference &oSRS);
-    OGRSpatialReference *GetSpatialRef(int iSrsId, bool bFallbackToEPSG = false,
-                                       bool bEmitErrorIfNotFound = true);
+    std::unique_ptr<OGRSpatialReference, OGRSpatialReferenceReleaser>
+    GetSpatialRef(int iSrsId, bool bFallbackToEPSG = false,
+                  bool bEmitErrorIfNotFound = true);
     OGRErr CreateExtensionsTableIfNecessary();
     bool HasExtensionsTable();
 
@@ -959,6 +960,8 @@ class OGRGeoPackageTableLayer final : public OGRGeoPackageLayer
     virtual bool HasFastSpatialFilter(int iGeomCol) override;
     virtual CPLString GetSpatialWhere(int iGeomCol,
                                       OGRGeometry *poFilterGeom) override;
+
+    OGRErr Truncate();
 
     bool HasSpatialIndex();
 

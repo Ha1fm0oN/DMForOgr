@@ -7074,8 +7074,9 @@ int PDFDataset::ParseMeasure(GDALPDFObject *poMeasure, double dfMediaBoxWidth,
                 // Check consistency of ESRI:xxxx and WKT definitions
                 if (poGCSWKT != nullptr)
                 {
-                    if (!EQUAL(oSRS_ESRI.GetName(), m_oSRS.GetName()) &&
-                        !oSRS_ESRI.IsSame(&m_oSRS))
+                    if (!m_oSRS.GetName() ||
+                        (!EQUAL(oSRS_ESRI.GetName(), m_oSRS.GetName()) &&
+                         !oSRS_ESRI.IsSame(&m_oSRS)))
                     {
                         CPLDebug("PDF",
                                  "Definition from ESRI:%d and WKT=%s do not "
@@ -7678,6 +7679,8 @@ CPLString PDFSanitizeLayerName(const char *pszName)
         else if (pszName[i] != '"')
             osName += pszName[i];
     }
+    if (osName.empty())
+        osName = "unnamed";
     return osName;
 }
 

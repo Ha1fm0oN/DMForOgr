@@ -40,16 +40,6 @@ int DoubleToIntClamp(double dfValue)
 }  // namespace
 
 /************************************************************************/
-/*                           OGRSimpleCurve()                           */
-/************************************************************************/
-
-/** Constructor */
-OGRSimpleCurve::OGRSimpleCurve()
-    : nPointCount(0), paoPoints(nullptr), padfZ(nullptr), padfM(nullptr)
-{
-}
-
-/************************************************************************/
 /*                OGRSimpleCurve( const OGRSimpleCurve& )               */
 /************************************************************************/
 
@@ -405,7 +395,12 @@ bool OGRSimpleCurve::setNumPoints(int nNewPointCount, int bZeroizeNewContent)
         if (nNewPointCount > std::numeric_limits<int>::max() /
                                  static_cast<int>(sizeof(OGRRawPoint)))
         {
-            CPLError(CE_Failure, CPLE_IllegalArg, "Too big point count.");
+            CPLError(CE_Failure, CPLE_IllegalArg,
+                     "Too many points on line/curve (%d points exceeds the "
+                     "limit of %d points)",
+                     nNewPointCount,
+                     std::numeric_limits<int>::max() /
+                         static_cast<int>(sizeof(OGRRawPoint)));
             return false;
         }
 
@@ -2797,16 +2792,6 @@ OGRPointIterator *OGRSimpleCurve::getPointIterator() const
 }
 
 /************************************************************************/
-/*                           OGRLineString()                            */
-/************************************************************************/
-
-/**
- * \brief Create an empty line string.
- */
-
-OGRLineString::OGRLineString() = default;
-
-/************************************************************************/
 /*                  OGRLineString( const OGRLineString& )               */
 /************************************************************************/
 
@@ -2820,12 +2805,6 @@ OGRLineString::OGRLineString() = default;
  */
 
 OGRLineString::OGRLineString(const OGRLineString &) = default;
-
-/************************************************************************/
-/*                          ~OGRLineString()                            */
-/************************************************************************/
-
-OGRLineString::~OGRLineString() = default;
 
 /************************************************************************/
 /*                    operator=( const OGRLineString& )                 */

@@ -90,6 +90,13 @@ the health of the project:
 
     .. container:: horizontal-logo
 
+        .. image:: ../../images/sponsors/logo-linz.png
+           :class: img-logos
+           :width: 150 px
+           :target: https://www.linz.govt.nz
+
+    .. container:: horizontal-logo
+
         .. image:: ../../images/sponsors/logo-mapgears.png
            :class: img-logos
            :width: 150 px
@@ -244,6 +251,8 @@ Related resources
 
 - `Sustainable GDAL Sponsorship Prospectus`_.
 - :ref:`Sponsoring frequently asked questions (FAQ) <sponsoring-faq>`.
+- :ref:`rfc-80`
+- :ref:`rfc-83`
 
 .. Source of the PDF is at https://docs.google.com/document/d/1yhMWeI_LgEXPUkngqOitqcKfp7ov6WsS41v5ulz-kd0/edit#
 
